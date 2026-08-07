@@ -2,7 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/teggen/openrouter-launch/internal/openrouter"
@@ -29,17 +32,30 @@ func (c *Claude) lookPath(file string) (string, error) {
 	return exec.LookPath(file)
 }
 
-// findPath resolves the claude binary. Lookup goes exclusively through
-// c.lookPath (LookPath when injected, exec.LookPath otherwise) so that
-// binary resolution is fully controllable in tests — no side channel to the
-// real filesystem exists that could make a test's outcome depend on what
-// happens to be installed on the machine running it.
+// findPath resolves the claude binary, falling back to the locations the
+// official installer uses when it is not on PATH.
 func (c *Claude) findPath() (string, error) {
-	p, err := c.lookPath("claude")
+	if p, err := c.lookPath("claude"); err == nil {
+		return p, nil
+	}
+
+	name := "claude"
+	if runtime.GOOS == "windows" {
+		name = "claude.exe"
+	}
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("claude binary not found: %w", err)
 	}
-	return p, nil
+	for _, candidate := range []string{
+		filepath.Join(home, ".local", "bin", name),
+		filepath.Join(home, ".claude", "local", name),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("claude binary not found")
 }
 
 // Command builds the Claude Code invocation. It is pure: nothing is written

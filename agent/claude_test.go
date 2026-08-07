@@ -2,6 +2,9 @@ package agent
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -102,11 +105,45 @@ func TestClaudeCommandRequiresAPIKey(t *testing.T) {
 }
 
 func TestClaudeCommandBinaryMissing(t *testing.T) {
+	// findPath falls back to checking well-known installer locations under
+	// $HOME when LookPath fails. Point HOME at an empty temp dir so those
+	// fallback checks genuinely miss, regardless of what happens to be
+	// installed on the machine running this test.
+	t.Setenv("HOME", t.TempDir())
 	c := &Claude{LookPath: func(string) (string, error) {
 		return "", errors.New("not found")
 	}}
 	if _, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"}); err == nil {
 		t.Error("expected an error when the binary is missing")
+	}
+}
+
+func TestClaudeCommandFallsBackToInstallerPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fallback candidate filename differs on windows (claude.exe); covered by findPath's runtime.GOOS branch, not by this fixture")
+	}
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	binDir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	binPath := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	c := &Claude{LookPath: func(string) (string, error) {
+		return "", errors.New("not on PATH")
+	}}
+	cmd, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	if cmd.Path != binPath {
+		t.Errorf("Path = %q, want %q", cmd.Path, binPath)
 	}
 }
 
