@@ -48,10 +48,12 @@ func buildIndex(all []*Spec) map[string]*Spec {
 	idx := make(map[string]*Spec, len(all)*2)
 
 	canonical := make(map[string]bool, len(all))
-	for _, s := range all {
+	for i, s := range all {
 		key := strings.ToLower(s.Name)
 		if key == "" {
-			panic("agent: spec is missing a name")
+			// The name itself is what's missing, so identify the entry by
+			// its position in the registry literal instead.
+			panic(fmt.Sprintf("agent: spec at index %d is missing a name", i))
 		}
 		if s.Launcher == nil {
 			panic(fmt.Sprintf("agent: spec %q has a nil Launcher", s.Name))
@@ -70,7 +72,7 @@ func buildIndex(all []*Spec) map[string]*Spec {
 				panic(fmt.Sprintf("agent: %q has an empty alias", s.Name))
 			}
 			if canonical[key] {
-				panic(fmt.Sprintf("agent: alias %q collides with an agent name", key))
+				panic(fmt.Sprintf("agent: %q's alias %q collides with an agent name", s.Name, key))
 			}
 			if prev, ok := idx[key]; ok && prev != s {
 				panic(fmt.Sprintf("agent: alias %q claimed by both %q and %q", key, prev.Name, s.Name))

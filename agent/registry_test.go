@@ -2,6 +2,8 @@ package agent
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -73,25 +75,45 @@ func TestBuildIndexPanicsOnDuplicateName(t *testing.T) {
 	})
 }
 
+// TestBuildIndexPanicsOnAliasCollidingWithName also pins that the panic
+// message names the offending spec ("b", whose alias "a" is the collision) -
+// with many registry entries (Phase 3), that is what lets someone locate the
+// bad one from the panic message alone.
 func TestBuildIndexPanicsOnAliasCollidingWithName(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Error("expected a panic for alias colliding with a canonical name")
-		}
+	var msg any
+	func() {
+		defer func() { msg = recover() }()
+		buildIndex([]*Spec{
+			{Name: "a", Launcher: fakeLauncher{name: "a"}},
+			{Name: "b", Aliases: []string{"a"}, Launcher: fakeLauncher{name: "b"}},
+		})
 	}()
-	buildIndex([]*Spec{
-		{Name: "a", Launcher: fakeLauncher{name: "a"}},
-		{Name: "b", Aliases: []string{"a"}, Launcher: fakeLauncher{name: "b"}},
-	})
+	if msg == nil {
+		t.Fatal("expected a panic for alias colliding with a canonical name")
+	}
+	if !strings.Contains(fmt.Sprint(msg), "b") {
+		t.Errorf("panic message should name the offending spec %q, got: %v", "b", msg)
+	}
 }
 
+// TestBuildIndexPanicsOnEmptyName also pins that the panic message identifies
+// which registry entry is missing a name (by position, since the name itself
+// is what's missing) so it can be located among many entries.
 func TestBuildIndexPanicsOnEmptyName(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Error("expected a panic for an empty name")
-		}
+	var msg any
+	func() {
+		defer func() { msg = recover() }()
+		buildIndex([]*Spec{
+			{Name: "a", Launcher: fakeLauncher{name: "a"}},
+			{Name: "", Launcher: fakeLauncher{name: ""}},
+		})
 	}()
-	buildIndex([]*Spec{{Name: "", Launcher: fakeLauncher{name: ""}}})
+	if msg == nil {
+		t.Fatal("expected a panic for an empty name")
+	}
+	if !strings.Contains(fmt.Sprint(msg), "1") {
+		t.Errorf("panic message should identify the offending index (1), got: %v", msg)
+	}
 }
 
 // TestBuildIndexPanicsOnNilLauncher pins Launcher as a required field: every
