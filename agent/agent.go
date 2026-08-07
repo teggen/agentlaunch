@@ -19,7 +19,8 @@ type Request struct {
 	ExtraArgs []string
 }
 
-// Command is a process to run. Env entries are appended to os.Environ().
+// Command is a process to run. Env entries override any inherited
+// environment variable of the same name; see ExecArgs for the merge.
 type Command struct {
 	Path string
 	Args []string
