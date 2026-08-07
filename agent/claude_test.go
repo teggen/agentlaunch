@@ -79,6 +79,11 @@ func TestClaudeCommandEnv(t *testing.T) {
 		"ANTHROPIC_DEFAULT_HAIKU_MODEL":  "anthropic/claude-opus-4.6",
 		"CLAUDE_CODE_SUBAGENT_MODEL":     "anthropic/claude-opus-4.6",
 	}
+	// This env block IS the product: assert the exact set, not just that the
+	// expected keys are present, so a stray variable fails the test.
+	if len(cmd.Env) != len(want) {
+		t.Errorf("len(cmd.Env) = %d, want %d (exact set): %v", len(cmd.Env), len(want), cmd.Env)
+	}
 	for key, wantVal := range want {
 		got, ok := envValue(cmd.Env, key)
 		if !ok {
