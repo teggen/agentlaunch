@@ -94,6 +94,22 @@ func TestBuildIndexPanicsOnEmptyName(t *testing.T) {
 	buildIndex([]*Spec{{Name: "", Launcher: fakeLauncher{name: ""}}})
 }
 
+// TestBuildIndexPanicsOnNilLauncher pins Launcher as a required field: every
+// caller that dereferences spec.Launcher (newLaunchCmds, agents.go,
+// Installed) would otherwise panic obscurely, far from the registry bug that
+// caused it. Catching this at buildIndex, alongside the other registry-literal
+// programmer errors it already guards, makes the failure immediately
+// diagnosable and, since buildIndex runs at package-variable initialization
+// (var index = buildIndex(specs)), fires before main() ever runs.
+func TestBuildIndexPanicsOnNilLauncher(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected a panic for a nil Launcher")
+		}
+	}()
+	buildIndex([]*Spec{{Name: "a", Launcher: nil}})
+}
+
 func TestUnsupportedSpecCarriesReason(t *testing.T) {
 	specs := []*Spec{{
 		Name:     "copilot",

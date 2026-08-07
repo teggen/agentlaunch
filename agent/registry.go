@@ -18,8 +18,11 @@ type Status struct {
 
 // Spec is a registry entry.
 type Spec struct {
-	Name        string
-	Aliases     []string
+	Name    string
+	Aliases []string
+	// Launcher is required: buildIndex panics at startup if it is nil,
+	// since every caller (newLaunchCmds, the agents listing, Installed)
+	// dereferences it unconditionally.
 	Launcher    Launcher
 	Description string
 	Status      Status
@@ -49,6 +52,9 @@ func buildIndex(all []*Spec) map[string]*Spec {
 		key := strings.ToLower(s.Name)
 		if key == "" {
 			panic("agent: spec is missing a name")
+		}
+		if s.Launcher == nil {
+			panic(fmt.Sprintf("agent: spec %q has a nil Launcher", s.Name))
 		}
 		if canonical[key] {
 			panic(fmt.Sprintf("agent: duplicate agent name %q", key))

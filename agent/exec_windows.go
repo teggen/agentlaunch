@@ -8,8 +8,11 @@ import (
 	"os/exec"
 )
 
-// Run starts the agent and waits for it, since Windows has no exec(2). The
-// child's exit code is propagated by the caller via exec.ExitError.
+// Run starts the agent and waits for it, since Windows has no exec(2). On a
+// nonzero exit, the returned error wraps *exec.ExitError; main extracts its
+// ExitCode() to set the process's own exit status (see exitCode in
+// main.go), and internal/cli's resolveAndRun recognizes the same shape to
+// suppress cobra's redundant error line for it.
 func Run(c Command) error {
 	_, env := ExecArgs(c)
 
