@@ -302,6 +302,39 @@ func TestPlanStaleCatalogWarningPrecedesCompatibilityWarning(t *testing.T) {
 	}
 }
 
+// A fatal guard must not swallow warnings the planner already collected.
+// Offline with a stale cache, a model added since the cache was written is
+// genuinely absent - so the staleness notice is the explanation for the
+// unknown-model error, not noise beside it.
+func TestPlanKeepsStaleWarningWhenALaterGuardFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+	path, err := openrouter.CachePath()
+	if err != nil {
+		t.Fatalf("CachePath: %v", err)
+	}
+	writeCacheFileForTest(t, path, time.Now().Add(-48*time.Hour))
+
+	svc := &Service{Catalog: erroringCatalog{}, Run: func(agent.Command) error { return nil }}
+	p, err := svc.Plan(context.Background(), Request{
+		Spec: spec("fake", &fakeLauncher{}), ModelID: "no/such-model",
+	})
+
+	var ume *UnknownModelError
+	if !errors.As(err, &ume) {
+		t.Fatalf("Plan returned %T (%v), want *UnknownModelError", err, err)
+	}
+	if len(p.Warnings) != 1 {
+		t.Fatalf("Warnings = %+v, want the stale-catalog warning to survive the error", p.Warnings)
+	}
+	if p.Warnings[0].Kind != WarnStaleCatalog {
+		t.Errorf("Warnings[0].Kind = %v, want WarnStaleCatalog", p.Warnings[0].Kind)
+	}
+}
+
 func TestPlanHappyPathBuildsCommandWithoutWarnings(t *testing.T) {
 	svc := newTestService(t)
 

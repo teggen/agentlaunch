@@ -42,22 +42,30 @@ type Plan struct {
 func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 	spec := req.Spec
 
+	// Warnings accumulated before a fatal guard are returned alongside the
+	// error rather than discarded. A stale catalog is frequently the reason
+	// the guard below it failed - a model added since the cache was written
+	// will not be found - so dropping it would hide the explanation. The CLI
+	// used to print this from inside the catalog load, where no later guard
+	// could suppress it; returning it here preserves that.
+	var warnings []Warning
+
 	if err := CheckSupported(spec); err != nil {
-		return Plan{}, err
+		return Plan{Warnings: warnings}, err
 	}
 
 	if platform, ok := spec.Launcher.(agent.PlatformSupported); ok {
 		if err := platform.Supported(); err != nil {
-			return Plan{}, &UnsupportedPlatformError{Agent: spec.Name, Err: err}
+			return Plan{Warnings: warnings}, &UnsupportedPlatformError{Agent: spec.Name, Err: err}
 		}
 	}
 
 	if req.ModelID == "" {
-		return Plan{}, ErrNoModel
+		return Plan{Warnings: warnings}, ErrNoModel
 	}
 
 	if installable, ok := spec.Launcher.(agent.Installable); ok && !installable.CheckInstalled() {
-		return Plan{}, &NotInstalledError{
+		return Plan{Warnings: warnings}, &NotInstalledError{
 			Agent:       spec.Name,
 			DisplayName: spec.Launcher.DisplayName(),
 			Hint:        installable.InstallHint(),
@@ -66,17 +74,16 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 
 	snap, err := s.Snapshot(ctx, req.Refresh)
 	if err != nil {
-		return Plan{}, err
+		return Plan{Warnings: warnings}, err
 	}
 
-	var warnings []Warning
 	if w, ok := StaleWarning(snap, time.Now()); ok {
 		warnings = append(warnings, w)
 	}
 
 	model, ok := openrouter.FindByID(snap.Models, req.ModelID)
 	if !ok {
-		return Plan{}, &UnknownModelError{
+		return Plan{Warnings: warnings}, &UnknownModelError{
 			ModelID:     req.ModelID,
 			Suggestions: openrouter.Suggest(snap.Models, req.ModelID, 5),
 		}
@@ -84,11 +91,11 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 
 	cfg, err := config.Load()
 	if err != nil {
-		return Plan{}, err
+		return Plan{Warnings: warnings}, err
 	}
 	apiKey, err := config.ResolveAPIKey(cfg)
 	if err != nil {
-		return Plan{}, err
+		return Plan{Warnings: warnings}, err
 	}
 
 	if compatible, ok := spec.Launcher.(agent.Compatible); ok {
@@ -97,7 +104,7 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 			// non-Anthropic models, so this warns rather than aborts.
 			// Anything else is a genuine failure.
 			if !errors.Is(err, agent.ErrIncompatibleModel) {
-				return Plan{}, err
+				return Plan{Warnings: warnings}, err
 			}
 			warnings = append(warnings, Warning{
 				Kind:     WarnIncompatibleModel,
@@ -113,7 +120,7 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		ExtraArgs: req.ExtraArgs,
 	})
 	if err != nil {
-		return Plan{}, err
+		return Plan{Warnings: warnings}, err
 	}
 
 	return Plan{Spec: spec, Model: model, Command: command, Warnings: warnings}, nil
