@@ -1,0 +1,120 @@
+package launch
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/config"
+	"github.com/teggen/openrouter-launch/internal/openrouter"
+)
+
+// Request is a launch request.
+type Request struct {
+	Spec      *agent.Spec
+	ModelID   string
+	ExtraArgs []string
+	// Refresh bypasses the cached catalog.
+	Refresh bool
+}
+
+// Plan is a resolved launch: a runnable command plus the conditions the
+// caller must render and, where Warning.Question is set, get approved.
+type Plan struct {
+	Spec     *agent.Spec
+	Model    openrouter.Model
+	Command  agent.Command
+	Warnings []Warning
+}
+
+// Plan resolves req into a runnable command. It performs IO - catalog fetch,
+// config read - but never touches the terminal: every condition a user must
+// see comes back as a Warning or a typed error.
+//
+// The guard order is load-bearing. It decides which of several simultaneous
+// problems the user is told about first, and the empty-model check sits
+// deliberately ahead of the install check so that a user with no agent
+// installed still reaches the model picker in Phase 2.
+//
+// Confirmation is NOT performed here. The caller renders the warnings,
+// obtains approval, and only then calls Launch.
+func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
+	spec := req.Spec
+
+	if err := CheckSupported(spec); err != nil {
+		return Plan{}, err
+	}
+
+	if platform, ok := spec.Launcher.(agent.PlatformSupported); ok {
+		if err := platform.Supported(); err != nil {
+			return Plan{}, &UnsupportedPlatformError{Agent: spec.Name, Err: err}
+		}
+	}
+
+	if req.ModelID == "" {
+		return Plan{}, ErrNoModel
+	}
+
+	if installable, ok := spec.Launcher.(agent.Installable); ok && !installable.CheckInstalled() {
+		return Plan{}, &NotInstalledError{
+			Agent:       spec.Name,
+			DisplayName: spec.Launcher.DisplayName(),
+			Hint:        installable.InstallHint(),
+		}
+	}
+
+	snap, err := s.Snapshot(ctx, req.Refresh)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	var warnings []Warning
+	if w, ok := StaleWarning(snap, time.Now()); ok {
+		warnings = append(warnings, w)
+	}
+
+	model, ok := openrouter.FindByID(snap.Models, req.ModelID)
+	if !ok {
+		return Plan{}, &UnknownModelError{
+			ModelID:     req.ModelID,
+			Suggestions: openrouter.Suggest(snap.Models, req.ModelID, 5),
+		}
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return Plan{}, err
+	}
+	apiKey, err := config.ResolveAPIKey(cfg)
+	if err != nil {
+		return Plan{}, err
+	}
+
+	if compatible, ok := spec.Launcher.(agent.Compatible); ok {
+		if err := compatible.CheckModel(model); err != nil {
+			// Incompatibility is advisory: Claude Code works with many
+			// non-Anthropic models, so this warns rather than aborts.
+			// Anything else is a genuine failure.
+			if !errors.Is(err, agent.ErrIncompatibleModel) {
+				return Plan{}, err
+			}
+			warnings = append(warnings, Warning{
+				Kind:     WarnIncompatibleModel,
+				Message:  err.Error(),
+				Question: "Launch anyway?",
+			})
+		}
+	}
+
+	command, err := spec.Launcher.Command(agent.Request{
+		Model:     model,
+		APIKey:    apiKey,
+		ExtraArgs: req.ExtraArgs,
+	})
+	if err != nil {
+		return Plan{}, err
+	}
+
+	return Plan{Spec: spec, Model: model, Command: command, Warnings: warnings}, nil
+}
