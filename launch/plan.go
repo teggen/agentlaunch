@@ -12,6 +12,8 @@ import (
 
 // Request is a launch request.
 type Request struct {
+	// Spec must be non-nil; Plan dereferences it unconditionally starting
+	// with its first guard, CheckSupported.
 	Spec      *agent.Spec
 	ModelID   string
 	ExtraArgs []string
@@ -31,6 +33,12 @@ type Plan struct {
 // Plan resolves req into a runnable command. It performs IO - catalog fetch,
 // config read - but never touches the terminal: every condition a user must
 // see comes back as a Warning or a typed error.
+//
+// Warnings accumulated before a fatal guard are returned alongside the
+// error, not discarded. Callers must render Plan.Warnings before inspecting
+// err - "p, err := svc.Plan(...); if err != nil { return err }" silently
+// drops them, and a stale catalog is frequently the reason a later guard
+// failed.
 //
 // The guard order is load-bearing. It decides which of several simultaneous
 // problems the user is told about first, and the empty-model check sits

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
@@ -21,7 +22,9 @@ func testPlan() Plan {
 }
 
 // blockConfigWrites points XDG_CONFIG_HOME at a regular file, so the config
-// directory cannot be created and both Load and Save fail.
+// directory cannot be created. config.Load fails first (ENOTDIR) and
+// returns, so the selection is never recorded and config.Save is never
+// reached in these tests.
 func blockConfigWrites(t *testing.T) {
 	t.Helper()
 	blocker := filepath.Join(t.TempDir(), "not-a-dir")
@@ -140,14 +143,8 @@ func TestLaunchHandsOffTheBuiltCommandUnchanged(t *testing.T) {
 	if err := svc.Launch(p, nil); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
-	if got.Path != p.Command.Path {
-		t.Errorf("Path = %q, want %q", got.Path, p.Command.Path)
-	}
-	if len(got.Args) != len(p.Command.Args) {
-		t.Errorf("Args = %v, want %v", got.Args, p.Command.Args)
-	}
-	if len(got.Env) != len(p.Command.Env) {
-		t.Errorf("Env = %v, want %v", got.Env, p.Command.Env)
+	if !reflect.DeepEqual(got, p.Command) {
+		t.Errorf("Launch handed off %+v, want %+v unchanged", got, p.Command)
 	}
 }
 
