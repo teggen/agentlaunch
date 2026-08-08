@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -87,6 +88,10 @@ func TestOpenCodeInstallable(t *testing.T) {
 // editing PATH; findPath must look there. Landmine 8 discipline: build the
 // fixture inside a temp HOME so the machine's real install state is invisible.
 func TestOpenCodeFindPathUsesInstallerLocation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture writes a Unix-named binary; findPath looks for opencode.exe on Windows")
+	}
+
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, ".opencode", "bin")
