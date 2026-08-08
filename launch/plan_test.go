@@ -37,13 +37,6 @@ type notInstalledLauncher struct{ fakeLauncher }
 func (*notInstalledLauncher) CheckInstalled() bool { return false }
 func (*notInstalledLauncher) InstallHint() string  { return "brew install fake" }
 
-// unsupportedPlatformLauncher refuses to run here, whatever "here" is.
-type unsupportedPlatformLauncher struct{ fakeLauncher }
-
-func (*unsupportedPlatformLauncher) Supported() error {
-	return errors.New("windows is not supported yet")
-}
-
 // blockedLauncher is both platform-unsupported and not installed, so a test
 // can assert which of the two guards wins.
 type blockedLauncher struct{ fakeLauncher }
@@ -161,6 +154,29 @@ func TestPlanNotInstalledBeatsUnknownModel(t *testing.T) {
 	}
 	if nie.DisplayName != "Fake Agent" {
 		t.Errorf("DisplayName = %q", nie.DisplayName)
+	}
+}
+
+// Pins guard 4 (agent installed) ahead of guard 5 (catalog load). With a
+// working catalog both orderings produce NotInstalledError, so this uses a
+// catalog that hard-fails with no cache to fall back on: correct ordering
+// still reports the actionable "not installed", while a swap would surface
+// the generic "load model catalog" failure instead. Fresh machine, no agent
+// installed, offline is exactly when that difference matters.
+func TestPlanNotInstalledBeatsCatalogFailure(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", dir) // deliberately no cache file written
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+
+	svc := &Service{Catalog: erroringCatalog{}, Run: func(agent.Command) error { return nil }}
+	_, err := svc.Plan(context.Background(), Request{
+		Spec: spec("fake", &notInstalledLauncher{}), ModelID: "anthropic/claude-opus-4.6",
+	})
+
+	var nie *NotInstalledError
+	if !errors.As(err, &nie) {
+		t.Fatalf("Plan returned %T (%v), want *NotInstalledError", err, err)
 	}
 }
 
