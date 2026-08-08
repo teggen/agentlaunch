@@ -48,7 +48,7 @@ func (c *Codex) Command(req Request) (Command, error) {
 		"-c", `model_providers.openrouter.name="OpenRouter"`,
 		"-c", `model_providers.openrouter.base_url="` + openrouter.DefaultBaseURL + `"`,
 		"-c", `model_providers.openrouter.env_key="OPENROUTER_API_KEY"`,
-		"-c", `model_providers.openrouter.wire_api="chat"`,
+		"-c", `model_providers.openrouter.wire_api="responses"`,
 		"-m", req.Model.ID,
 	}
 	args = append(args, req.ExtraArgs...)

@@ -28,7 +28,7 @@ func TestCodexCommandPathArgsEnv(t *testing.T) {
 		"-c", `model_providers.openrouter.name="OpenRouter"`,
 		"-c", `model_providers.openrouter.base_url="https://openrouter.ai/api/v1"`,
 		"-c", `model_providers.openrouter.env_key="OPENROUTER_API_KEY"`,
-		"-c", `model_providers.openrouter.wire_api="chat"`,
+		"-c", `model_providers.openrouter.wire_api="responses"`,
 		"-m", "anthropic/claude-opus-4.6",
 		"resume",
 	}
