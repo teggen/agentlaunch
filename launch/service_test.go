@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/openrouter/ortest"
 )
 
 // erroringCatalog always fails, forcing Snapshot down the stale-cache
@@ -19,28 +20,6 @@ type erroringCatalog struct{}
 
 func (erroringCatalog) Models(context.Context) ([]openrouter.Model, error) {
 	return nil, errors.New("network down")
-}
-
-// fakeCatalog serves fixed models without touching the network.
-type fakeCatalog struct{ models []openrouter.Model }
-
-func (f *fakeCatalog) Models(context.Context) ([]openrouter.Model, error) {
-	return f.models, nil
-}
-
-// fakeModels mirrors the CLI's fixture set. openai/o1-mini is the only entry
-// without tool support, which is what several filter tests key on.
-func fakeModels() []openrouter.Model {
-	return []openrouter.Model{
-		{ID: "anthropic/claude-opus-4.6", Name: "Anthropic: Claude Opus 4.6",
-			ContextLength: 200000, PromptPricePerM: 15, CompletionPricePerM: 75,
-			SupportsTools: true, Provider: "anthropic"},
-		{ID: "qwen/qwen3-coder:free", Name: "Qwen: Qwen3 Coder (free)",
-			ContextLength: 262144, SupportsTools: true, Provider: "qwen"},
-		{ID: "openai/o1-mini", Name: "OpenAI: o1-mini",
-			ContextLength: 128000, PromptPricePerM: 1.1, CompletionPricePerM: 4.4,
-			Provider: "openai"},
-	}
 }
 
 // writeCacheFileForTest writes a catalog cache file in the on-disk shape
@@ -54,7 +33,7 @@ func writeCacheFileForTest(t *testing.T, path string, fetchedAt time.Time) {
 	data, err := json.Marshal(struct {
 		FetchedAt time.Time          `json:"fetched_at"`
 		Models    []openrouter.Model `json:"models"`
-	}{FetchedAt: fetchedAt, Models: fakeModels()})
+	}{FetchedAt: fetchedAt, Models: ortest.Models()})
 	if err != nil {
 		t.Fatalf("marshal cache file: %v", err)
 	}

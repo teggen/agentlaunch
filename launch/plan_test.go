@@ -11,6 +11,7 @@ import (
 	"github.com/teggen/openrouter-launch/internal/agent"
 	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/openrouter/ortest"
 )
 
 // fakeLauncher implements only the required Launcher interface. The types
@@ -81,7 +82,7 @@ func newTestService(t *testing.T) *Service {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
 	return &Service{
-		Catalog: &fakeCatalog{models: fakeModels()},
+		Catalog: ortest.NewCatalog(),
 		Run:     func(agent.Command) error { return nil },
 	}
 }
