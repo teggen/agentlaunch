@@ -37,6 +37,36 @@ var specs = []*Spec{
 		Description: "Anthropic's coding tool with subagents",
 		Status:      Status{Supported: true},
 	},
+	{
+		Name:        "codex",
+		Launcher:    &Codex{},
+		Description: "OpenAI's Codex CLI",
+		Status:      Status{Supported: true},
+	},
+	{
+		Name:        "opencode",
+		Launcher:    &OpenCode{},
+		Description: "Open-source terminal coding agent",
+		Status:      Status{Supported: true},
+	},
+	{
+		Name:        "chatgpt",
+		Launcher:    &stub{name: "chatgpt", display: "ChatGPT / Codex app"},
+		Description: "OpenAI's desktop app",
+		Status:      Status{Supported: false, Reason: "desktop app authenticates through its own account; a launcher cannot inject a provider"},
+	},
+	{
+		Name:        "claude-desktop",
+		Launcher:    &stub{name: "claude-desktop", display: "Claude Desktop"},
+		Description: "Anthropic's desktop app",
+		Status:      Status{Supported: false, Reason: "desktop app authenticates through its own account; a launcher cannot inject a provider"},
+	},
+	{
+		Name:        "hermes-desktop",
+		Launcher:    &stub{name: "hermes-desktop", display: "Hermes Desktop"},
+		Description: "Nous Research's desktop app",
+		Status:      Status{Supported: false, Reason: "desktop app authenticates through its own account; a launcher cannot inject a provider"},
+	},
 }
 
 var index = buildIndex(specs)

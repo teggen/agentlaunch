@@ -109,3 +109,28 @@ func TestCheckSupportedAcceptsSupportedAgent(t *testing.T) {
 		t.Errorf("CheckSupported(supported) = %v, want nil", err)
 	}
 }
+
+func TestCheckSupportedCoversEveryUnsupportedRegistryEntry(t *testing.T) {
+	sawUnsupported := false
+	for _, spec := range agent.List() {
+		if spec.Status.Supported {
+			if err := CheckSupported(spec); err != nil {
+				t.Errorf("%q: CheckSupported = %v, want nil", spec.Name, err)
+			}
+			continue
+		}
+		sawUnsupported = true
+		err := CheckSupported(spec)
+		var uae *UnsupportedAgentError
+		if !errors.As(err, &uae) {
+			t.Errorf("%q: CheckSupported returned %T (%v), want *UnsupportedAgentError", spec.Name, err, err)
+			continue
+		}
+		if uae.Reason != spec.Status.Reason {
+			t.Errorf("%q: Reason = %q, want %q", spec.Name, uae.Reason, spec.Status.Reason)
+		}
+	}
+	if !sawUnsupported {
+		t.Fatal("registry contains no unsupported agents; this test no longer tests anything")
+	}
+}

@@ -147,3 +147,46 @@ func TestUnsupportedSpecCarriesReason(t *testing.T) {
 		t.Error("unsupported spec must carry a reason")
 	}
 }
+
+func TestRegistryPhase3Agents(t *testing.T) {
+	for _, name := range []string{"codex", "opencode"} {
+		spec, err := Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%q): %v", name, err)
+		}
+		if !spec.Status.Supported {
+			t.Errorf("%q registered unsupported", name)
+		}
+		if len(spec.Aliases) != 0 {
+			t.Errorf("%q has aliases %q, spec says none", name, spec.Aliases)
+		}
+	}
+}
+
+func TestRegistryUnsupportedDesktopApps(t *testing.T) {
+	for _, name := range []string{"chatgpt", "claude-desktop", "hermes-desktop"} {
+		spec, err := Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%q): %v", name, err)
+		}
+		if spec.Status.Supported {
+			t.Errorf("%q registered as supported", name)
+		}
+		if spec.Status.Reason == "" {
+			t.Errorf("%q has no reason", name)
+		}
+		if spec.Launcher == nil {
+			t.Errorf("%q has nil Launcher", name) // Landmine 10
+		}
+		if spec.Launcher.Name() != name {
+			t.Errorf("%q launcher Name() = %q", name, spec.Launcher.Name())
+		}
+	}
+}
+
+func TestStubCommandErrors(t *testing.T) {
+	s := &stub{name: "chatgpt", display: "ChatGPT"}
+	if _, err := s.Command(Request{Model: testModel(), APIKey: "k"}); err == nil {
+		t.Fatal("stub.Command succeeded; it must always error")
+	}
+}
