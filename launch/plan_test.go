@@ -248,16 +248,17 @@ func TestPlanIncompatibleModelYieldsConfirmableWarning(t *testing.T) {
 
 // A genuine (non-ErrIncompatibleModel) CheckModel error is a hard failure,
 // not something to soften into a warning and continue past. The returned
-// error IS the assertion: if the error were downgraded to a warning, Plan
-// would succeed and err would be nil.
+// error IS the primary assertion: if the error were downgraded to a
+// warning, Plan would succeed and err would be nil.
 //
-// Do not add an `if len(p.Warnings) != 0` check here. Plan returns Plan{}
-// on every error path, so such an assertion can never fail regardless of
-// what the implementation does.
+// The Warnings check is meaningful since Plan began returning warnings
+// accumulated before a fatal guard: with a fresh catalog nothing should
+// have accumulated, so a warning appearing here would mean the genuine
+// error had been softened into one rather than replaced by one.
 func TestPlanGenuineCheckModelErrorIsFatal(t *testing.T) {
 	svc := newTestService(t)
 
-	_, err := svc.Plan(context.Background(), Request{
+	p, err := svc.Plan(context.Background(), Request{
 		Spec: spec("fake", &brokenCheckLauncher{}), ModelID: "anthropic/claude-opus-4.6",
 	})
 	if err == nil {
@@ -265,6 +266,9 @@ func TestPlanGenuineCheckModelErrorIsFatal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "catalog service unreachable") {
 		t.Errorf("error should propagate unchanged, got %v", err)
+	}
+	if len(p.Warnings) != 0 {
+		t.Errorf("Warnings = %+v, want none - a fresh catalog accumulates nothing", p.Warnings)
 	}
 }
 
