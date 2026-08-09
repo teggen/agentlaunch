@@ -62,6 +62,12 @@ var specs = []*Spec{
 		Status:      Status{Supported: true},
 	},
 	{
+		Name:        "qwen",
+		Launcher:    &Qwen{},
+		Description: "Qwen's terminal coding agent",
+		Status:      Status{Supported: true},
+	},
+	{
 		Name:        "chatgpt",
 		Launcher:    &stub{name: "chatgpt", display: "ChatGPT / Codex app"},
 		Description: "OpenAI's desktop app",
