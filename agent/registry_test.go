@@ -190,3 +190,19 @@ func TestStubCommandErrors(t *testing.T) {
 		t.Fatal("stub.Command succeeded; it must always error")
 	}
 }
+
+func TestRegistryTier2Agents(t *testing.T) {
+	// Grows by one name per Phase 4a agent task.
+	for _, name := range []string{"pi"} {
+		spec, err := Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%q): %v", name, err)
+		}
+		if !spec.Status.Supported {
+			t.Errorf("%q registered unsupported", name)
+		}
+		if len(spec.Aliases) != 0 {
+			t.Errorf("%q has aliases %q, spec says none", name, spec.Aliases)
+		}
+	}
+}
