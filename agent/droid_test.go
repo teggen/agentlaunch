@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -98,6 +99,32 @@ func TestDroidApplyFreshFile(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("restore left behind a file we created into an empty state")
+	}
+}
+
+// TestDroidCreatesFactoryDirWithoutWorldAccess pins the one directory we
+// create that we do not own. ~/.factory is droid's, so this stops at
+// removing world access rather than going to 0700 like our own dirs — the
+// minimum that satisfies least privilege without narrowing another tool's
+// directory further than it asked for. It only ever applies to a droid
+// install that has never run; an existing ~/.factory keeps its own mode,
+// because MkdirAll leaves an existing directory alone.
+func TestDroidCreatesFactoryDirWithoutWorldAccess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	if _, err := (&Droid{}).Apply(Request{Model: testModel(), APIKey: "sk-or-test"}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	info, err := os.Stat(filepath.Dir(droidSettingsPath(t, home)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm&0o007 != 0 {
+		t.Errorf("~/.factory mode = %o, want no world access (0750)", perm)
 	}
 }
 

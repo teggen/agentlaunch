@@ -134,7 +134,10 @@ func (o *OpenClaw) StagedFiles(req Request) ([]StagedFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []StagedFile{{Path: path, Contents: contents, Mode: 0o644}}, nil
+	// 0600 even though no secret is inside — the key stays in the env. This
+	// file is launcher-owned and its only reader is the openclaw process we
+	// spawn as this same user, so nothing needs the broader mode.
+	return []StagedFile{{Path: path, Contents: contents, Mode: 0o600}}, nil
 }
 
 // CheckInstalled reports whether an openclaw (or legacy clawdbot) binary

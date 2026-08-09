@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -195,6 +196,43 @@ func TestLaunchStagesFilesBeforeRun(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o644 {
 		t.Errorf("mode = %v, want 0644", info.Mode().Perm())
+	}
+}
+
+// TestLaunchStagesIntoAPrivateDir pins least privilege on the directory
+// stageFiles creates for write site #3. It is our own config dir — the same
+// one holding the 0600 API key file — so nothing outside this process needs
+// to reach it. The assertion is on the group/other bits rather than an exact
+// mode so a stricter umask does not fail it spuriously; under the usual 0022
+// it is exactly 0700.
+func TestLaunchStagesIntoAPrivateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{Run: func(agent.Command) error { return nil }}
+	p := Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged: []agent.StagedFile{{
+			Path:     filepath.Join(dir, "openclaw.json"),
+			Contents: []byte(`{}`),
+			Mode:     0o600,
+		}},
+	}
+	if err := svc.Launch(p, nil); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("staged-file dir mode = %o, want no group or other access (0700)", perm)
 	}
 }
 

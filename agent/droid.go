@@ -171,7 +171,12 @@ func foreignDroidModels(settings map[string]any) []any {
 // inside — the apiKey field holds the literal interpolation string — and
 // there is no prior mode to preserve.
 func writeDroidSettingsFile(path string, settings map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0750, not the 0700 our own directories get: ~/.factory belongs to
+	// droid, not to us, so this drops world access and stops there rather
+	// than narrowing another tool's directory further than it asked for.
+	// Only reachable on a droid install that has never run — MkdirAll leaves
+	// an existing directory's mode alone.
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")

@@ -45,8 +45,8 @@ func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 	if string(files[0].Contents) != wantCfg {
 		t.Errorf("staged contents =\n%s\nwant\n%s", files[0].Contents, wantCfg)
 	}
-	if files[0].Mode != 0o644 {
-		t.Errorf("mode = %v, want 0644 (no secret inside)", files[0].Mode)
+	if files[0].Mode != 0o600 {
+		t.Errorf("mode = %v, want 0600 — the file is ours and only the agent we spawn, as this same user, ever reads it", files[0].Mode)
 	}
 	if strings.Contains(string(files[0].Contents), "sk-or-test") {
 		t.Error("API key leaked into the staged file")

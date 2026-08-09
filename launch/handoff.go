@@ -72,7 +72,9 @@ func stageFiles(files []agent.StagedFile) error {
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("staged file %q is outside the launcher config dir %q", f.Path, dir)
 		}
-		if err := os.MkdirAll(filepath.Dir(f.Path), 0o755); err != nil {
+		// 0700: the boundary check above guarantees this resolves inside our
+		// own config dir, the same one holding the 0600 key file.
+		if err := os.MkdirAll(filepath.Dir(f.Path), 0o700); err != nil {
 			return err
 		}
 		if err := os.WriteFile(f.Path, f.Contents, f.Mode); err != nil {
