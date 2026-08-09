@@ -18,7 +18,9 @@ import (
 // not the binary-K 65,536 the doc-verified value assumed: hermes's own
 // startup error reads "below the minimum 64,000", and a 65,535-context
 // model (microsoft/wizardlm-2-8x22b) passed hermes's context gate and only
-// failed later for an unrelated reason. See Landmine 18.
+// failed later for an unrelated reason (64,000 decimal, not 65,536 —
+// live-verified 2026-08-09; see the Phase 4 spec's live-verification
+// results).
 const hermesMinContext = 64000
 
 // Hermes launches Nous Research's Hermes Agent CLI against an OpenRouter
