@@ -74,6 +74,12 @@ var specs = []*Spec{
 		Status:      Status{Supported: true},
 	},
 	{
+		Name:        "kimi",
+		Launcher:    &Kimi{},
+		Description: "Moonshot AI's Kimi Code CLI",
+		Status:      Status{Supported: true},
+	},
+	{
 		Name:        "chatgpt",
 		Launcher:    &stub{name: "chatgpt", display: "ChatGPT / Codex app"},
 		Description: "OpenAI's desktop app",
