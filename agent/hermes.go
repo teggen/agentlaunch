@@ -13,8 +13,13 @@ import (
 )
 
 // hermesMinContext is the context floor hermes enforces at startup: models
-// under 64K tokens are refused by hermes itself, so warn before launching.
-const hermesMinContext = 65536
+// under this many tokens are refused by hermes itself, so warn before
+// launching. Live-verified on v0.20.0 (2026-08-09) as 64,000 (decimal),
+// not the binary-K 65,536 the doc-verified value assumed: hermes's own
+// startup error reads "below the minimum 64,000", and a 65,535-context
+// model (microsoft/wizardlm-2-8x22b) passed hermes's context gate and only
+// failed later for an unrelated reason. See Landmine 18.
+const hermesMinContext = 64000
 
 // Hermes launches Nous Research's Hermes Agent CLI against an OpenRouter
 // model. OpenRouter is a first-class hermes provider; --provider/--model on
@@ -93,12 +98,12 @@ func (h *Hermes) Command(req Request) (Command, error) {
 	return Command{Path: path, Args: args, Env: env}, nil
 }
 
-// CheckModel warns (advisory, Landmine 7) for models under hermes's 64K
-// context floor. Unknown context stays silent: missing catalog data is not
-// evidence of incompatibility.
+// CheckModel warns (advisory, Landmine 7) for models under hermes's context
+// floor. Unknown context stays silent: missing catalog data is not evidence
+// of incompatibility.
 func (h *Hermes) CheckModel(m openrouter.Model) error {
 	if m.ContextLength > 0 && m.ContextLength < hermesMinContext {
-		return fmt.Errorf("hermes refuses models with less than a 64K context window at startup (%s has %d tokens): %w",
+		return fmt.Errorf("hermes refuses models with less than a 64,000-token context window at startup (%s has %d tokens): %w",
 			m.ID, m.ContextLength, ErrIncompatibleModel)
 	}
 	return nil

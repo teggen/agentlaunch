@@ -77,6 +77,22 @@ func TestHermesCheckModelContextFloor(t *testing.T) {
 	if err := h.CheckModel(openrouter.Model{ID: "unknown/model"}); err != nil {
 		t.Errorf("unknown context rejected: %v", err)
 	}
+	// Live-verified 2026-08-09: hermes's own startup message reads "below
+	// the minimum 64,000" (decimal), not the binary-K 65,536 this test used
+	// to assert as the floor. Confirmed by launching
+	// microsoft/wizardlm-2-8x22b (context 65,535) through raw hermes: it
+	// passed hermes's own context gate and failed later for an unrelated
+	// reason (no tool-use endpoints) — proving hermes's real floor sits
+	// below 65,536. These three cases pin the true boundary at 64,000.
+	if err := h.CheckModel(openrouter.Model{ID: "boundary/model", ContextLength: 65000}); err != nil {
+		t.Errorf("65,000 context (above hermes's real 64,000 floor) rejected: %v", err)
+	}
+	if err := h.CheckModel(openrouter.Model{ID: "floor/model", ContextLength: 64000}); err != nil {
+		t.Errorf("exactly 64,000 context rejected: %v", err)
+	}
+	if err := h.CheckModel(openrouter.Model{ID: "under-floor/model", ContextLength: 63999}); !errors.Is(err, ErrIncompatibleModel) {
+		t.Errorf("63,999 context: err = %v, want ErrIncompatibleModel", err)
+	}
 }
 
 // Landmine 8: hermes is really installed at ~/.local/bin/hermes here.
