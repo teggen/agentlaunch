@@ -93,6 +93,37 @@ func TestQwenFindPathFallbacks(t *testing.T) {
 	}
 }
 
+func TestQwenFindPathPrefersHighestNvmVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
+	q := &Qwen{LookPath: notOnPath}
+
+	// Create two nvm version directories with qwen binaries
+	v22Dir := filepath.Join(home, ".nvm", "versions", "node", "v22.19.0", "bin")
+	v24Dir := filepath.Join(home, ".nvm", "versions", "node", "v24.1.0", "bin")
+
+	for _, dir := range []string{v22Dir, v24Dir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		bin := filepath.Join(dir, "qwen")
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Command should resolve to the higher version (v24.1.0)
+	cmd, err := q.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	expectedPath := filepath.Join(v24Dir, "qwen")
+	if cmd.Path != expectedPath {
+		t.Errorf("Path = %q, want %q (highest nvm version)", cmd.Path, expectedPath)
+	}
+}
+
 func TestQwenInstallHint(t *testing.T) {
 	q := &Qwen{}
 	if hint := q.InstallHint(); !strings.Contains(hint, "@qwen-code/qwen-code") {
