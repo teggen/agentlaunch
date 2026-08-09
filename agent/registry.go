@@ -92,6 +92,12 @@ var specs = []*Spec{
 		Status:      Status{Supported: true},
 	},
 	{
+		Name:        "droid",
+		Launcher:    &Droid{},
+		Description: "Factory's terminal coding agent (session-scoped managed config; Factory account required)",
+		Status:      Status{Supported: true},
+	},
+	{
 		Name:        "chatgpt",
 		Launcher:    &stub{name: "chatgpt", display: "ChatGPT / Codex app"},
 		Description: "OpenAI's desktop app",

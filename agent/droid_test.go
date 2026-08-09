@@ -1,0 +1,195 @@
+package agent
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func droidSettingsPath(t *testing.T, home string) string {
+	t.Helper()
+	return filepath.Join(home, ".factory", "settings.local.json")
+}
+
+func readDroidSettings(t *testing.T, path string) map[string]any {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("parse settings: %v", err)
+	}
+	return m
+}
+
+func TestDroidCommandArgsAndEnv(t *testing.T) {
+	d := &Droid{LookPath: stubLookPath("/usr/local/bin/droid")}
+	cmd, err := d.Command(Request{Model: testModel(), APIKey: "sk-or-test", ExtraArgs: []string{"exec", "hi"}})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	// No -m: model selection lives in the settings file Apply writes. The
+	// index-derived custom: ID is only knowable at Apply time, and Command
+	// is pure.
+	if want := []string{"exec", "hi"}; !slices.Equal(cmd.Args, want) {
+		t.Errorf("Args = %q, want %q", cmd.Args, want)
+	}
+	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
+	}
+	for _, extras := range [][]string{{"-m", "x"}, {"--model", "x"}, {"--model=x"}} {
+		if _, err := d.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: extras}); err == nil {
+			t.Errorf("extras %q accepted, want conflict error", extras)
+		}
+	}
+}
+
+func TestDroidApplyFreshFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	d := &Droid{}
+
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	path := droidSettingsPath(t, home)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "sk-or-test") {
+		t.Fatal("the real key was written to disk; only ${OPENROUTER_API_KEY} may appear")
+	}
+	m := readDroidSettings(t, path)
+	models := m["customModels"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("customModels has %d entries, want 1", len(models))
+	}
+	entry := models[0].(map[string]any)
+	for key, want := range map[string]string{
+		"displayName": "openrouter-launch",
+		"provider":    "generic-chat-completion-api",
+		"baseUrl":     "https://openrouter.ai/api/v1",
+		"model":       "anthropic/claude-opus-4.6",
+		"apiKey":      "${OPENROUTER_API_KEY}",
+	} {
+		if entry[key] != want {
+			t.Errorf("entry[%q] = %v, want %q", key, entry[key], want)
+		}
+	}
+	if m["model"] != "custom:openrouter-launch-0" {
+		t.Errorf("model = %v, want custom:openrouter-launch-0", m["model"])
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("restore left behind a file we created into an empty state")
+	}
+}
+
+func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prior := `{"model":"gpt-5.5-codex","customModels":[{"displayName":"Mine","provider":"generic-chat-completion-api","baseUrl":"http://mine","model":"m","apiKey":"k"}],"theme":"dark"}`
+	path := filepath.Join(dir, "settings.local.json")
+	if err := os.WriteFile(path, []byte(prior), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{}
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	m := readDroidSettings(t, path)
+	models := m["customModels"].([]any)
+	if len(models) != 2 {
+		t.Fatalf("customModels has %d entries, want 2 (theirs + ours)", len(models))
+	}
+	if models[0].(map[string]any)["displayName"] != "Mine" {
+		t.Error("foreign entry displaced from index 0")
+	}
+	// Ours is at index 1, so the selection ID must say 1.
+	if m["model"] != "custom:openrouter-launch-1" {
+		t.Errorf("model = %v, want custom:openrouter-launch-1", m["model"])
+	}
+	if m["theme"] != "dark" {
+		t.Error("unrelated setting clobbered")
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	m = readDroidSettings(t, path)
+	if m["model"] != "gpt-5.5-codex" {
+		t.Errorf("restore: model = %v, want prior gpt-5.5-codex", m["model"])
+	}
+	models = m["customModels"].([]any)
+	if len(models) != 1 || models[0].(map[string]any)["displayName"] != "Mine" {
+		t.Errorf("restore: customModels = %v, want only the foreign entry", models)
+	}
+}
+
+func TestDroidApplyReplacesStaleMarkerEntry(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A crashed prior run left our marker entry with an old model.
+	stale := `{"customModels":[{"displayName":"openrouter-launch","provider":"generic-chat-completion-api","baseUrl":"https://openrouter.ai/api/v1","model":"old/model","apiKey":"${OPENROUTER_API_KEY}"}]}`
+	path := filepath.Join(dir, "settings.local.json")
+	if err := os.WriteFile(path, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{}
+	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	m := readDroidSettings(t, path)
+	models := m["customModels"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("stale marker not replaced: %d entries", len(models))
+	}
+	if got := models[0].(map[string]any)["model"]; got != "anthropic/claude-opus-4.6" {
+		t.Errorf("model = %v, want the fresh slug", got)
+	}
+}
+
+func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.local.json")
+	if err := os.WriteFile(path, []byte(`{definitely not json`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := &Droid{}
+	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err == nil {
+		t.Fatal("Apply clobbered a file it could not parse")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{definitely not json` {
+		t.Error("unparseable file was modified")
+	}
+}
