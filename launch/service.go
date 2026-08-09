@@ -19,6 +19,9 @@ type Service struct {
 	Catalog openrouter.Catalog
 	// Run performs the process handoff. nil means agent.Run.
 	Run func(agent.Command) error
+	// RunWait performs the fork-and-wait handoff for ConfigWriter agents.
+	// nil means agent.RunWait.
+	RunWait func(agent.Command) error
 }
 
 func (s *Service) catalog() openrouter.Catalog {
@@ -33,6 +36,13 @@ func (s *Service) run(c agent.Command) error {
 		return s.Run(c)
 	}
 	return agent.Run(c)
+}
+
+func (s *Service) runWait(c agent.Command) error {
+	if s.RunWait != nil {
+		return s.RunWait(c)
+	}
+	return agent.RunWait(c)
 }
 
 // Snapshot returns the model catalog with its provenance. Staleness is

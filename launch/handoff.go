@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,6 +35,9 @@ func (s *Service) Launch(p Plan, warn func(Warning)) error {
 	}
 	if err := stageFiles(p.Staged); err != nil {
 		return fmt.Errorf("stage launcher-owned config: %w", err)
+	}
+	if cw, ok := p.Spec.Launcher.(agent.ConfigWriter); ok {
+		return s.launchConfigWriter(p, cw)
 	}
 	return s.run(p.Command)
 }
@@ -76,4 +80,21 @@ func stageFiles(files []agent.StagedFile) error {
 		}
 	}
 	return nil
+}
+
+// launchConfigWriter is the fork-and-wait path: Apply writes the agent's
+// config (the one sanctioned agent-owned write, Landmine 6 as amended), the
+// agent runs as a waited-on child, and restore undoes the write afterwards —
+// including after a failed session. The run error is preserved through
+// errors.Join so main's exit-code extraction still sees the *exec.ExitError.
+func (s *Service) launchConfigWriter(p Plan, cw agent.ConfigWriter) error {
+	restore, err := cw.Apply(p.AgentRequest)
+	if err != nil {
+		return fmt.Errorf("configure %s: %w", p.Spec.Name, err)
+	}
+	runErr := s.runWait(p.Command)
+	if rerr := restore(); rerr != nil {
+		return errors.Join(runErr, fmt.Errorf("restore %s config: %w", p.Spec.Name, rerr))
+	}
+	return runErr
 }

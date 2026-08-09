@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
@@ -248,5 +249,79 @@ func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	}
 	if _, statErr := os.Stat(siblingPath); statErr == nil {
 		t.Error("the sibling file was written")
+	}
+}
+
+type recordingConfigWriter struct {
+	fakeLauncher
+	log      *[]string
+	applyErr error
+}
+
+func (r *recordingConfigWriter) Apply(agent.Request) (func() error, error) {
+	if r.applyErr != nil {
+		return nil, r.applyErr
+	}
+	*r.log = append(*r.log, "apply")
+	return func() error {
+		*r.log = append(*r.log, "restore")
+		return nil
+	}, nil
+}
+
+func TestLaunchConfigWriterOrderApplyRunRestore(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var log []string
+	svc := &Service{
+		RunWait: func(agent.Command) error { log = append(log, "run"); return nil },
+		Run: func(agent.Command) error {
+			t.Error("exec-style Run used for a ConfigWriter agent")
+			return nil
+		},
+	}
+	p := Plan{
+		Spec:    spec("fake", &recordingConfigWriter{log: &log}),
+		Command: agent.Command{Path: "/bin/true"},
+	}
+	if err := svc.Launch(p, nil); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if want := []string{"apply", "run", "restore"}; !slices.Equal(log, want) {
+		t.Errorf("order = %v, want %v", log, want)
+	}
+}
+
+func TestLaunchConfigWriterRestoreRunsOnRunFailure(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var log []string
+	runErr := errors.New("agent exited 1")
+	svc := &Service{RunWait: func(agent.Command) error { return runErr }}
+	p := Plan{
+		Spec:    spec("fake", &recordingConfigWriter{log: &log}),
+		Command: agent.Command{Path: "/bin/true"},
+	}
+	err := svc.Launch(p, nil)
+	if !errors.Is(err, runErr) {
+		t.Errorf("err = %v, want the run error preserved (main extracts the exit code from it)", err)
+	}
+	if !slices.Contains(log, "restore") {
+		t.Error("restore did not run after a failed session")
+	}
+}
+
+func TestLaunchConfigWriterApplyFailureSkipsRun(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var log []string
+	ran := false
+	svc := &Service{RunWait: func(agent.Command) error { ran = true; return nil }}
+	p := Plan{
+		Spec:    spec("fake", &recordingConfigWriter{log: &log, applyErr: errors.New("settings file unparseable")}),
+		Command: agent.Command{Path: "/bin/true"},
+	}
+	if err := svc.Launch(p, nil); err == nil {
+		t.Fatal("Launch succeeded despite Apply failure")
+	}
+	if ran {
+		t.Error("agent ran despite Apply failure")
 	}
 }
