@@ -86,6 +86,12 @@ var specs = []*Spec{
 		Status:      Status{Supported: true},
 	},
 	{
+		Name:        "openclaw",
+		Launcher:    &OpenClaw{},
+		Description: "Personal AI assistant with a terminal session",
+		Status:      Status{Supported: true},
+	},
+	{
 		Name:        "chatgpt",
 		Launcher:    &stub{name: "chatgpt", display: "ChatGPT / Codex app"},
 		Description: "OpenAI's desktop app",
