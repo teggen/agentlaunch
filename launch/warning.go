@@ -22,6 +22,10 @@ const (
 	// WarnSelectionNotSaved reports that the last selection could not be
 	// persisted. The launch proceeds regardless.
 	WarnSelectionNotSaved
+	// WarnShadowedCredential reports agent-side stored credentials or state
+	// that outrank the environment this launch provides. Advisory: the
+	// wrong-account risk is made visible, the user decides.
+	WarnShadowedCredential
 )
 
 // Warning is an advisory condition the caller renders.

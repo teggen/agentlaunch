@@ -384,3 +384,56 @@ func TestPlanPropagatesCommandBuildError(t *testing.T) {
 		t.Fatalf("Plan returned %v, want the launcher's build error", err)
 	}
 }
+
+type shadowingLauncher struct {
+	fakeLauncher
+	msg string
+}
+
+func (s *shadowingLauncher) ShadowedCredential() string { return s.msg }
+
+func TestPlanShadowedCredentialYieldsConfirmableWarning(t *testing.T) {
+	svc := newTestService(t)
+	// Copy the Request literal from
+	// TestPlanIncompatibleModelYieldsConfirmableWarning so the fake catalog
+	// resolves the model; only the Spec differs.
+	sh := &shadowingLauncher{msg: "fake has a stored OpenRouter credential that outranks the launched key"}
+	p, err := svc.Plan(context.Background(), Request{
+		Spec:    spec("fake", sh),
+		ModelID: "qwen/qwen3-coder:free",
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	var found *Warning
+	for i := range p.Warnings {
+		if p.Warnings[i].Kind == WarnShadowedCredential {
+			found = &p.Warnings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no WarnShadowedCredential in %+v", p.Warnings)
+	}
+	if found.Message != sh.msg {
+		t.Errorf("Message = %q, want %q", found.Message, sh.msg)
+	}
+	if found.Question == "" {
+		t.Error("Question empty: warning is not confirmable, launch would proceed unasked")
+	}
+}
+
+func TestPlanNoShadowWarningWhenDetectorSilent(t *testing.T) {
+	svc := newTestService(t)
+	p, err := svc.Plan(context.Background(), Request{
+		Spec:    spec("fake", &shadowingLauncher{msg: ""}),
+		ModelID: "qwen/qwen3-coder:free",
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	for _, w := range p.Warnings {
+		if w.Kind == WarnShadowedCredential {
+			t.Fatalf("empty detector produced warning %+v", w)
+		}
+	}
+}

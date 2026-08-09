@@ -66,3 +66,14 @@ type PlatformSupported interface {
 type ConfigWriter interface {
 	Apply(Request) (restore func() error, err error)
 }
+
+// CredentialShadowCheck reports stored agent-side state that would make a
+// launch ignore the environment this tool provides — a saved credential
+// that outranks env vars (pi, cline, hermes document exactly that), or a
+// binary generation that does not read them (legacy kimi-cli). Read-only
+// and best-effort: implementations must never write, and must return ""
+// (no warning) when the state is absent, unreadable, or unparseable —
+// a detector failure must never block a launch.
+type CredentialShadowCheck interface {
+	ShadowedCredential() string
+}

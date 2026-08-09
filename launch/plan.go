@@ -122,6 +122,16 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		}
 	}
 
+	if shadow, ok := spec.Launcher.(agent.CredentialShadowCheck); ok {
+		if msg := shadow.ShadowedCredential(); msg != "" {
+			warnings = append(warnings, Warning{
+				Kind:     WarnShadowedCredential,
+				Message:  msg,
+				Question: "Launch anyway?",
+			})
+		}
+	}
+
 	command, err := spec.Launcher.Command(agent.Request{
 		Model:     model,
 		APIKey:    apiKey,
