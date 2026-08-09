@@ -87,10 +87,14 @@ func TestDroidApplyFreshFile(t *testing.T) {
 	if m["model"] != "custom:openrouter-launch-0" {
 		t.Errorf("model = %v, want custom:openrouter-launch-0", m["model"])
 	}
-	if info, err := os.Stat(path); err != nil {
-		t.Fatal(err)
-	} else if info.Mode().Perm() != 0o644 {
-		t.Errorf("fresh-create mode = %v, want 0644 (no prior file to preserve)", info.Mode().Perm())
+	// Unix-only, like the assertion in TestDroidPreservesSettingsFileMode:
+	// Windows reports 0666 for any writable file.
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(path); err != nil {
+			t.Fatal(err)
+		} else if info.Mode().Perm() != 0o644 {
+			t.Errorf("fresh-create mode = %v, want 0644 (no prior file to preserve)", info.Mode().Perm())
+		}
 	}
 
 	if err := restore(); err != nil {

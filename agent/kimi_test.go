@@ -105,14 +105,18 @@ func TestKimiFindPathPrefersKimiCodeOverLegacy(t *testing.T) {
 	if err := os.MkdirAll(kimiCode, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(kimiCode, "kimi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	// kimiBinary(), not a literal "kimi": kimiCodePath appends .exe on
+	// Windows, so a bare name is a file findPath will never look for and
+	// the legacy path wins by default — which is the inverse of what this
+	// test exists to assert.
+	if err := os.WriteFile(filepath.Join(kimiCode, kimiBinary()), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	cmd, err := k.Command(Request{Model: kimiModel(), APIKey: "sk"})
 	if err != nil {
 		t.Fatalf("Command: %v", err)
 	}
-	if cmd.Path != filepath.Join(kimiCode, "kimi") {
+	if cmd.Path != filepath.Join(kimiCode, kimiBinary()) {
 		t.Errorf("Path = %q: Kimi Code's own install dir must beat the legacy uv path", cmd.Path)
 	}
 }
@@ -141,7 +145,11 @@ func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
 	if err := os.MkdirAll(kimiCode, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(kimiCode, "kimi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	// kimiBinary(), not a literal "kimi": kimiCodePath appends .exe on
+	// Windows, so a bare name is a file findPath will never look for and
+	// the legacy path wins by default — which is the inverse of what this
+	// test exists to assert.
+	if err := os.WriteFile(filepath.Join(kimiCode, kimiBinary()), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if msg := k.ShadowedCredential(); msg != "" {

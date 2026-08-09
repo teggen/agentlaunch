@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -62,6 +63,30 @@ func TestQwenCommandRejectsConflictingExtras(t *testing.T) {
 	}
 }
 
+// qwenFallbackBins is every path Qwen.findPath probes when qwen is not on
+// PATH, for the branch THIS platform actually runs.
+//
+// findPath takes an entirely different route on Windows — %APPDATA%\npm
+// and %LOCALAPPDATA%\npm, with .cmd/.exe suffixes — so a test hardcoding
+// the Unix dot-dirs asserted behavior that platform never had. Selecting
+// the list by GOOS gives Windows real coverage instead of a skip.
+func qwenFallbackBins(home string) []string {
+	if runtime.GOOS == "windows" {
+		var bins []string
+		for _, base := range []string{os.Getenv("APPDATA"), os.Getenv("LOCALAPPDATA")} {
+			bins = append(bins,
+				filepath.Join(base, "npm", "qwen.cmd"),
+				filepath.Join(base, "npm", "qwen.exe"))
+		}
+		return bins
+	}
+	return []string{
+		filepath.Join(home, ".npm-global", "bin", "qwen"),
+		filepath.Join(home, ".local", "bin", "qwen"),
+		filepath.Join(home, ".nvm", "versions", "node", "v22.19.0", "bin", "qwen"),
+	}
+}
+
 func TestQwenFindPathFallbacks(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
@@ -70,16 +95,14 @@ func TestQwenFindPathFallbacks(t *testing.T) {
 	if q.CheckInstalled() {
 		t.Error("CheckInstalled = true in an empty HOME")
 	}
-	for _, rel := range []string{
-		filepath.Join(".npm-global", "bin"),
-		filepath.Join(".local", "bin"),
-		filepath.Join(".nvm", "versions", "node", "v22.19.0", "bin"),
-	} {
-		dir := filepath.Join(home, rel)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	bins := qwenFallbackBins(home)
+	if len(bins) == 0 {
+		t.Fatal("no fallback paths for this platform, so this asserted nothing")
+	}
+	for _, bin := range bins {
+		if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		bin := filepath.Join(dir, "qwen")
 		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -92,7 +115,13 @@ func TestQwenFindPathFallbacks(t *testing.T) {
 	}
 }
 
+// nvm's versions/node/<v>/bin layout has no counterpart in findPath's
+// Windows branch, which only probes %APPDATA%/%LOCALAPPDATA%\npm — so
+// there is no highest-version ordering to assert there.
 func TestQwenFindPathPrefersHighestNvmVersion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("findPath has no nvm lookup on Windows")
+	}
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	q := &Qwen{LookPath: notOnPath}
