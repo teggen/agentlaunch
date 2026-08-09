@@ -119,7 +119,12 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 			delete(settings, "model")
 		}
 		if !existed && len(settings) == 0 {
-			return os.Remove(path)
+			// The user may already have deleted the file themselves during
+			// the session; that is not a restore failure.
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			return nil
 		}
 		return writeDroidSettingsFile(path, settings)
 	}
@@ -158,8 +163,13 @@ func foreignDroidModels(settings map[string]any) []any {
 }
 
 // writeDroidSettingsFile writes atomically: temp file in the same dir, then
-// rename (the Landmine 9 shape; 0644 because no secret is inside — the
-// apiKey field holds the literal interpolation string).
+// rename (the Landmine 9 shape). The mode preserves whatever the existing
+// target already has — a user's settings.local.json commonly holds foreign
+// customModels entries with REAL apiKey values (ours is the only
+// interpolated one), so Apply/restore must never broaden a 0600 file to
+// 0644. A fresh file (no prior target) gets 0644: no secret of ours is
+// inside — the apiKey field holds the literal interpolation string — and
+// there is no prior mode to preserve.
 func writeDroidSettingsFile(path string, settings map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -168,12 +178,18 @@ func writeDroidSettingsFile(path string, settings map[string]any) error {
 	if err != nil {
 		return err
 	}
+	mode := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".settings-*.json")
 	if err != nil {
 		return err
 	}
 	tmpName := tmp.Name()
-	if err := tmp.Chmod(0o644); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		return err

@@ -87,12 +87,81 @@ func TestDroidApplyFreshFile(t *testing.T) {
 	if m["model"] != "custom:openrouter-launch-0" {
 		t.Errorf("model = %v, want custom:openrouter-launch-0", m["model"])
 	}
+	if info, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	} else if info.Mode().Perm() != 0o644 {
+		t.Errorf("fresh-create mode = %v, want 0644 (no prior file to preserve)", info.Mode().Perm())
+	}
 
 	if err := restore(); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("restore left behind a file we created into an empty state")
+	}
+}
+
+// TestDroidPreservesSettingsFileMode pins the mode-preservation fix: a
+// user's settings.local.json commonly holds foreign customModels entries
+// with REAL apiKey values (ours is the only interpolated one), so Apply and
+// restore must never silently broaden a 0600 file to 0644.
+func TestDroidPreservesSettingsFileMode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	prior := `{"customModels":[{"displayName":"Mine","provider":"generic-chat-completion-api","baseUrl":"http://mine","model":"m","apiKey":"a-real-secret-key"}]}`
+	path := filepath.Join(dir, "settings.local.json")
+	if err := os.WriteFile(path, []byte(prior), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{}
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("after Apply: mode = %v, want 0600 preserved", info.Mode().Perm())
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	info, err = os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("after restore: mode = %v, want 0600 preserved", info.Mode().Perm())
+	}
+}
+
+// TestDroidRestoreToleratesFileAlreadyDeleted pins the ENOENT guard: if the
+// user deletes settings.local.json themselves mid-session, restore's own
+// cleanup os.Remove must not turn that into a restore error.
+func TestDroidRestoreToleratesFileAlreadyDeleted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	d := &Droid{}
+
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	path := droidSettingsPath(t, home)
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("simulate user deletion: %v", err)
+	}
+
+	if err := restore(); err != nil {
+		t.Errorf("restore after the user already deleted the file: %v, want nil", err)
 	}
 }
 
