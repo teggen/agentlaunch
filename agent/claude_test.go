@@ -114,7 +114,7 @@ func TestClaudeCommandBinaryMissing(t *testing.T) {
 	// $HOME when LookPath fails. Point HOME at an empty temp dir so those
 	// fallback checks genuinely miss, regardless of what happens to be
 	// installed on the machine running this test.
-	t.Setenv("HOME", t.TempDir())
+	testHome(t)
 	c := &Claude{LookPath: func(string) (string, error) {
 		return "", errors.New("not found")
 	}}
@@ -128,8 +128,7 @@ func TestClaudeCommandFallsBackToInstallerPath(t *testing.T) {
 		t.Skip("fallback candidate filename differs on windows (claude.exe); covered by findPath's runtime.GOOS branch, not by this fixture")
 	}
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 
 	binDir := filepath.Join(home, ".local", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {

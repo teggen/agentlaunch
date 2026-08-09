@@ -97,8 +97,7 @@ func TestHermesCheckModelContextFloor(t *testing.T) {
 
 // Landmine 8: hermes is really installed at ~/.local/bin/hermes here.
 func TestHermesFindPathFallback(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 
 	h := &Hermes{LookPath: notOnPath}
@@ -118,8 +117,7 @@ func TestHermesFindPathFallback(t *testing.T) {
 }
 
 func TestHermesShadowedCredential(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	h := &Hermes{}
 
 	if msg := h.ShadowedCredential(); msg != "" {

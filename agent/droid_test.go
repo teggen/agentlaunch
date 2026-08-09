@@ -52,8 +52,7 @@ func TestDroidCommandArgsAndEnv(t *testing.T) {
 }
 
 func TestDroidApplyFreshFile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	d := &Droid{}
 
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
@@ -113,8 +112,7 @@ func TestDroidCreatesFactoryDirWithoutWorldAccess(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file modes are not meaningful on Windows")
 	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 
 	if _, err := (&Droid{}).Apply(Request{Model: testModel(), APIKey: "sk-or-test"}); err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -132,9 +130,20 @@ func TestDroidCreatesFactoryDirWithoutWorldAccess(t *testing.T) {
 // user's settings.local.json commonly holds foreign customModels entries
 // with REAL apiKey values (ours is the only interpolated one), so Apply and
 // restore must never silently broaden a 0600 file to 0644.
+// Apply must not widen the permissions of a settings file the user already
+// owns — ~/.factory is the agent's, not ours (write site #4).
+//
+// Unix-only, matching TestSaveWritesFileMode0600 in internal/config: Windows
+// has no permission bits for Stat to report. os.Chmod there toggles only the
+// read-only attribute, so a writable file always comes back 0666 and this
+// assertion could never hold. The property itself is Unix-only too — on
+// Windows the file inherits the directory's ACL, which this tool does not
+// set.
 func TestDroidPreservesSettingsFileMode(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	home := testHome(t)
 	dir := filepath.Join(home, ".factory")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -174,8 +183,7 @@ func TestDroidPreservesSettingsFileMode(t *testing.T) {
 // user deletes settings.local.json themselves mid-session, restore's own
 // cleanup os.Remove must not turn that into a restore error.
 func TestDroidRestoreToleratesFileAlreadyDeleted(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	d := &Droid{}
 
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
@@ -193,8 +201,7 @@ func TestDroidRestoreToleratesFileAlreadyDeleted(t *testing.T) {
 }
 
 func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	dir := filepath.Join(home, ".factory")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -258,8 +265,7 @@ func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
 }
 
 func TestDroidApplyReplacesStaleMarkerEntry(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	dir := filepath.Join(home, ".factory")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -286,8 +292,7 @@ func TestDroidApplyReplacesStaleMarkerEntry(t *testing.T) {
 }
 
 func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	dir := filepath.Join(home, ".factory")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -310,8 +315,7 @@ func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
 }
 
 func TestDroidRestoreKeepsFileWhenUserAddedEntriesMidSession(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	d := &Droid{}
 
 	// Apply on a fresh HOME (no file) — creates the file

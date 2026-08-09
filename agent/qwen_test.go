@@ -63,8 +63,7 @@ func TestQwenCommandRejectsConflictingExtras(t *testing.T) {
 }
 
 func TestQwenFindPathFallbacks(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	q := &Qwen{LookPath: notOnPath}
 
@@ -94,8 +93,7 @@ func TestQwenFindPathFallbacks(t *testing.T) {
 }
 
 func TestQwenFindPathPrefersHighestNvmVersion(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	q := &Qwen{LookPath: notOnPath}
 

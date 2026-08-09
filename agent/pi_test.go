@@ -59,8 +59,7 @@ func TestPiCommandRejectsConflictingExtras(t *testing.T) {
 
 // Landmine 8: pi is really installed at ~/.local/bin/pi on this machine.
 func TestPiFindPathFallback(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 
 	missing := &Pi{LookPath: notOnPath}
@@ -88,8 +87,7 @@ func TestPiInstallHint(t *testing.T) {
 }
 
 func TestPiShadowedCredential(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	p := &Pi{}
 
 	if msg := p.ShadowedCredential(); msg != "" {

@@ -55,8 +55,7 @@ func TestOMPCommandRejectsConflictingExtras(t *testing.T) {
 }
 
 func TestOMPFindPathFallbacks(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	o := &OMP{LookPath: notOnPath}
 

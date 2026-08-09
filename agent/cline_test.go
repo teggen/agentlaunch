@@ -58,8 +58,7 @@ func TestClineCommandRejectsConflictingExtras(t *testing.T) {
 }
 
 func TestClineShadowedCredential(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	c := &Cline{}
 
 	if msg := c.ShadowedCredential(); msg != "" {

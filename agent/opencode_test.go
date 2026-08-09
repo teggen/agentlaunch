@@ -61,7 +61,7 @@ func TestOpenCodeCommandRejectsModelExtras(t *testing.T) {
 // Landmine 8: the fallback path is under HOME, and a real opencode install
 // must not make the "absent" cases pass or fail by accident.
 func TestOpenCodeFindPathFallback(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 
 	missing := &OpenCode{LookPath: notOnPath}
@@ -92,8 +92,7 @@ func TestOpenCodeFindPathUsesInstallerLocation(t *testing.T) {
 		t.Skip("fixture writes a Unix-named binary; findPath looks for opencode.exe on Windows")
 	}
 
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	dir := filepath.Join(home, ".opencode", "bin")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)

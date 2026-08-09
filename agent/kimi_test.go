@@ -82,8 +82,7 @@ func TestKimiCommandRejectsConflictingExtras(t *testing.T) {
 
 // Landmine 8 discipline for every location probe below.
 func TestKimiFindPathPrefersKimiCodeOverLegacy(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	k := &Kimi{LookPath: notOnPath}
 
@@ -119,8 +118,7 @@ func TestKimiFindPathPrefersKimiCodeOverLegacy(t *testing.T) {
 }
 
 func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 	k := &Kimi{LookPath: notOnPath}
 
@@ -155,8 +153,7 @@ func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
 // installer renames legacy shims to kimi-legacy, so anything still resolved
 // via LookPath is assumed current, with no path-heuristic warning.
 func TestKimiShadowedCredentialTrustsPATHHit(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	testHome(t)
 	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
 
 	if msg := k.ShadowedCredential(); msg != "" {

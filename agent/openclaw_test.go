@@ -143,8 +143,7 @@ func TestOpenClawFallsBackToClawdbotBinary(t *testing.T) {
 }
 
 func TestOpenClawShadowedCredential(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	o := &OpenClaw{}
 
 	if msg := o.ShadowedCredential(); msg != "" {

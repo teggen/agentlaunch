@@ -190,12 +190,22 @@ func TestLaunchStagesFilesBeforeRun(t *testing.T) {
 	if string(contentAtRun) != string(staged.Contents) {
 		t.Errorf("at run time file held %q, want %q — staging must precede the handoff", contentAtRun, staged.Contents)
 	}
-	info, err := os.Stat(staged.Path)
-	if err != nil {
+	if _, err := os.Stat(staged.Path); err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
-		t.Errorf("mode = %v, want 0644", info.Mode().Perm())
+	// The mode is only assertable on Unix (see internal/config's
+	// TestSaveWritesFileMode0600): Windows reports 0666 for any writable
+	// file. Guarding just this assertion rather than skipping the test
+	// keeps the staging-precedes-handoff ordering — the thing this test is
+	// actually named for — covered on all three platforms.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(staged.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o644 {
+			t.Errorf("mode = %v, want 0644", info.Mode().Perm())
+		}
 	}
 }
 
