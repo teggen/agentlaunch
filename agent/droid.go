@@ -189,22 +189,27 @@ func writeDroidSettingsFile(path string, settings map[string]any) error {
 		return err
 	}
 	tmpName := tmp.Name()
+	// The Close/Remove calls below are best-effort cleanup on paths that are
+	// already returning a real error. Their own failures are ignored
+	// deliberately: there is nothing to do about them, and reporting one
+	// would mask the error that actually explains why the write failed. The
+	// explicit `_ =` marks the choice so errcheck does not have to guess.
 	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return err
 	}
 	return nil
