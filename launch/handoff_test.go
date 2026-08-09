@@ -197,6 +197,7 @@ func TestLaunchStagesFilesBeforeRun(t *testing.T) {
 }
 
 func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
+	// Case 1: unrelated directory (no shared prefix)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	outside := filepath.Join(t.TempDir(), "evil.json")
 	ran := false
@@ -208,12 +209,44 @@ func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	}
 	err := svc.Launch(p, nil)
 	if err == nil {
-		t.Fatal("Launch staged a file outside the launcher config dir")
+		t.Fatal("Launch staged a file outside the launcher config dir (unrelated dir case)")
 	}
 	if ran {
-		t.Error("run happened despite staging failure")
+		t.Error("run happened despite staging failure (unrelated dir case)")
 	}
 	if _, statErr := os.Stat(outside); statErr == nil {
-		t.Error("the outside file was written")
+		t.Error("the outside file was written (unrelated dir case)")
+	}
+
+	// Case 2: sibling directory sharing the string prefix (distinguishes filepath.Rel from naive strings.HasPrefix)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // fresh temp dir for this case
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Create a sibling dir that shares the string prefix but is not a subdirectory
+	// e.g., dir=/tmp/xyz/cfg → sibling=/tmp/xyz/cfg-evil
+	siblingDir := dir + "-evil"
+	if err := os.MkdirAll(siblingDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	siblingPath := filepath.Join(siblingDir, "staged.json")
+
+	ran = false
+	svc = &Service{Run: func(agent.Command) error { ran = true; return nil }}
+	p = Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged:  []agent.StagedFile{{Path: siblingPath, Contents: []byte("x"), Mode: 0o644}},
+	}
+	err = svc.Launch(p, nil)
+	if err == nil {
+		t.Fatal("Launch staged a file in sibling dir with shared prefix")
+	}
+	if ran {
+		t.Error("run happened despite staging failure (sibling case)")
+	}
+	if _, statErr := os.Stat(siblingPath); statErr == nil {
+		t.Error("the sibling file was written")
 	}
 }
