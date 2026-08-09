@@ -193,7 +193,7 @@ func TestStubCommandErrors(t *testing.T) {
 
 func TestRegistryTier2Agents(t *testing.T) {
 	// Grows by one name per Phase 4a agent task.
-	for _, name := range []string{"pi", "hermes", "qwen", "cline", "kimi"} {
+	for _, name := range []string{"pi", "hermes", "qwen", "cline", "kimi", "omp"} {
 		spec, err := Lookup(name)
 		if err != nil {
 			t.Fatalf("Lookup(%q): %v", name, err)
