@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -435,5 +436,36 @@ func TestPlanNoShadowWarningWhenDetectorSilent(t *testing.T) {
 		if w.Kind == WarnShadowedCredential {
 			t.Fatalf("empty detector produced warning %+v", w)
 		}
+	}
+}
+
+type stagedLauncher struct {
+	fakeLauncher
+	files []agent.StagedFile
+}
+
+func (s *stagedLauncher) StagedFiles(agent.Request) ([]agent.StagedFile, error) {
+	return s.files, nil
+}
+
+func TestPlanCarriesStagedFilesAndAgentRequest(t *testing.T) {
+	svc := newTestService(t)
+	want := []agent.StagedFile{{Path: "/tmp/x/openclaw.json", Contents: []byte("{}"), Mode: 0o644}}
+	p, err := svc.Plan(context.Background(), Request{
+		Spec:      spec("fake", &stagedLauncher{files: want}),
+		ModelID:   "qwen/qwen3-coder:free",
+		ExtraArgs: []string{"--flag"},
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(p.Staged) != 1 || p.Staged[0].Path != want[0].Path {
+		t.Errorf("Staged = %+v, want %+v", p.Staged, want)
+	}
+	if p.AgentRequest.Model.ID != "qwen/qwen3-coder:free" {
+		t.Errorf("AgentRequest.Model.ID = %q", p.AgentRequest.Model.ID)
+	}
+	if !slices.Equal(p.AgentRequest.ExtraArgs, []string{"--flag"}) {
+		t.Errorf("AgentRequest.ExtraArgs = %q", p.AgentRequest.ExtraArgs)
 	}
 }

@@ -4,6 +4,7 @@ package agent
 
 import (
 	"errors"
+	"os"
 
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
@@ -76,4 +77,24 @@ type ConfigWriter interface {
 // a detector failure must never block a launch.
 type CredentialShadowCheck interface {
 	ShadowedCredential() string
+}
+
+// StagedFile is a launcher-owned file a launch needs on disk — openclaw's
+// model config is the canonical case. Declared as data so Command stays
+// pure; launch.Service.Launch materializes it. Staged files live under this
+// tool's own config dir and must never contain secrets.
+type StagedFile struct {
+	Path     string
+	Contents []byte
+	Mode     os.FileMode
+}
+
+// Staged is implemented by launchers that need launcher-owned files at
+// launch time. StagedFiles MUST be pure, like Command. Distinct from
+// ConfigWriter on purpose: Staged writes OUR files (idempotent overwrite,
+// no undo, syscall.Exec handoff unaffected); ConfigWriter writes an
+// AGENT'S file (backup and restore required, forces fork-and-wait). Do not
+// merge them — the distinction is the amended Landmine 6 in type form.
+type Staged interface {
+	StagedFiles(Request) ([]StagedFile, error)
 }

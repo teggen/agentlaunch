@@ -158,3 +158,62 @@ func TestLaunchPropagatesHandoffError(t *testing.T) {
 		t.Fatalf("Launch returned %v, want %v", err, want)
 	}
 }
+
+func TestLaunchStagesFilesBeforeRun(t *testing.T) {
+	cfgDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfgDir)
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := agent.StagedFile{
+		Path:     filepath.Join(dir, "openclaw.json"),
+		Contents: []byte(`{"agents":{}}`),
+		Mode:     0o644,
+	}
+	var contentAtRun []byte
+	svc := &Service{Run: func(agent.Command) error {
+		contentAtRun, _ = os.ReadFile(staged.Path)
+		return nil
+	}}
+	p := Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged:  []agent.StagedFile{staged},
+	}
+	if err := svc.Launch(p, nil); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if string(contentAtRun) != string(staged.Contents) {
+		t.Errorf("at run time file held %q, want %q — staging must precede the handoff", contentAtRun, staged.Contents)
+	}
+	info, err := os.Stat(staged.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Errorf("mode = %v, want 0644", info.Mode().Perm())
+	}
+}
+
+func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	outside := filepath.Join(t.TempDir(), "evil.json")
+	ran := false
+	svc := &Service{Run: func(agent.Command) error { ran = true; return nil }}
+	p := Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged:  []agent.StagedFile{{Path: outside, Contents: []byte("x"), Mode: 0o644}},
+	}
+	err := svc.Launch(p, nil)
+	if err == nil {
+		t.Fatal("Launch staged a file outside the launcher config dir")
+	}
+	if ran {
+		t.Error("run happened despite staging failure")
+	}
+	if _, statErr := os.Stat(outside); statErr == nil {
+		t.Error("the outside file was written")
+	}
+}

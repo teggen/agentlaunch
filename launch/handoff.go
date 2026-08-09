@@ -1,6 +1,12 @@
 package launch
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/teggen/openrouter-launch/internal/agent"
 	"github.com/teggen/openrouter-launch/internal/config"
 )
 
@@ -26,6 +32,9 @@ func (s *Service) Launch(p Plan, warn func(Warning)) error {
 			Message: "could not save last selection: " + err.Error(),
 		})
 	}
+	if err := stageFiles(p.Staged); err != nil {
+		return fmt.Errorf("stage launcher-owned config: %w", err)
+	}
 	return s.run(p.Command)
 }
 
@@ -41,4 +50,30 @@ func recordSelection(p Plan) error {
 	cfg.LastAgent = p.Spec.Name
 	cfg.LastModel = p.Model.ID
 	return config.Save(cfg)
+}
+
+// stageFiles writes the plan's launcher-owned files. It refuses any path
+// outside this tool's own config dir: staged files are write site #3 of the
+// amended Landmine 6, and the boundary is enforced here, not trusted.
+func stageFiles(files []agent.StagedFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+	dir, err := config.Dir()
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		rel, err := filepath.Rel(dir, f.Path)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("staged file %q is outside the launcher config dir %q", f.Path, dir)
+		}
+		if err := os.MkdirAll(filepath.Dir(f.Path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.Path, f.Contents, f.Mode); err != nil {
+			return err
+		}
+	}
+	return nil
 }

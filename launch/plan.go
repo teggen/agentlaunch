@@ -24,9 +24,16 @@ type Request struct {
 // Plan is a resolved launch: a runnable command plus the conditions the
 // caller must render and, where Warning.Question is set, get approved.
 type Plan struct {
-	Spec     *agent.Spec
-	Model    openrouter.Model
-	Command  agent.Command
+	Spec    *agent.Spec
+	Model   openrouter.Model
+	Command agent.Command
+	// AgentRequest is the request Command was built from. The fork-and-wait
+	// path re-uses it for ConfigWriter.Apply, which cannot run at plan time
+	// (it writes).
+	AgentRequest agent.Request
+	// Staged are launcher-owned files Launch materializes before the
+	// handoff. Computed here (purely) so Launch stays a straight line.
+	Staged   []agent.StagedFile
 	Warnings []Warning
 }
 
@@ -132,14 +139,30 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		}
 	}
 
-	command, err := spec.Launcher.Command(agent.Request{
+	areq := agent.Request{
 		Model:     model,
 		APIKey:    apiKey,
 		ExtraArgs: req.ExtraArgs,
-	})
+	}
+	command, err := spec.Launcher.Command(areq)
 	if err != nil {
 		return Plan{Warnings: warnings}, err
 	}
 
-	return Plan{Spec: spec, Model: model, Command: command, Warnings: warnings}, nil
+	var staged []agent.StagedFile
+	if st, ok := spec.Launcher.(agent.Staged); ok {
+		staged, err = st.StagedFiles(areq)
+		if err != nil {
+			return Plan{Warnings: warnings}, err
+		}
+	}
+
+	return Plan{
+		Spec:         spec,
+		Model:        model,
+		Command:      command,
+		AgentRequest: areq,
+		Staged:       staged,
+		Warnings:     warnings,
+	}, nil
 }
