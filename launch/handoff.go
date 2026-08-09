@@ -85,16 +85,19 @@ func stageFiles(files []agent.StagedFile) error {
 // launchConfigWriter is the fork-and-wait path: Apply writes the agent's
 // config (the one sanctioned agent-owned write, Landmine 6 as amended), the
 // agent runs as a waited-on child, and restore undoes the write afterwards —
-// including after a failed session. The run error is preserved through
-// errors.Join so main's exit-code extraction still sees the *exec.ExitError.
-func (s *Service) launchConfigWriter(p Plan, cw agent.ConfigWriter) error {
-	restore, err := cw.Apply(p.AgentRequest)
-	if err != nil {
-		return fmt.Errorf("configure %s: %w", p.Spec.Name, err)
+// including after a failed session, and even if something panics between
+// Apply and the run (restore is deferred for exactly that reason). The run
+// error is preserved through errors.Join so main's exit-code extraction
+// still sees the *exec.ExitError.
+func (s *Service) launchConfigWriter(p Plan, cw agent.ConfigWriter) (err error) {
+	restore, applyErr := cw.Apply(p.AgentRequest)
+	if applyErr != nil {
+		return fmt.Errorf("configure %s: %w", p.Spec.Name, applyErr)
 	}
-	runErr := s.runWait(p.Command)
-	if rerr := restore(); rerr != nil {
-		return errors.Join(runErr, fmt.Errorf("restore %s config: %w", p.Spec.Name, rerr))
-	}
-	return runErr
+	defer func() {
+		if rerr := restore(); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("restore %s config: %w", p.Spec.Name, rerr))
+		}
+	}()
+	return s.runWait(p.Command)
 }

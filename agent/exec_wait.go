@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,11 +19,10 @@ import (
 func RunWait(c Command) error {
 	argv, env := ExecArgs(c)
 	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Args = argv
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := cmd.Start(); err != nil {
-		return err
+		return fmt.Errorf("run %s: %w", c.Path, err)
 	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -32,6 +32,9 @@ func RunWait(c Command) error {
 	for {
 		select {
 		case s := <-sig:
+			// Best-effort forward: the child may have already exited between
+			// the signal arriving and this call, so a failed Signal is not
+			// actionable here.
 			_ = cmd.Process.Signal(s)
 		case err := <-done:
 			return err
