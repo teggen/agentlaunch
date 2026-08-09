@@ -150,3 +150,16 @@ func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
 		t.Errorf("Kimi Code present: msg = %q, want empty", msg)
 	}
 }
+
+// A PATH hit is trusted per ShadowedCredential's doc comment: the Kimi Code
+// installer renames legacy shims to kimi-legacy, so anything still resolved
+// via LookPath is assumed current, with no path-heuristic warning.
+func TestKimiShadowedCredentialTrustsPATHHit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+
+	if msg := k.ShadowedCredential(); msg != "" {
+		t.Errorf("PATH hit: msg = %q, want empty", msg)
+	}
+}
