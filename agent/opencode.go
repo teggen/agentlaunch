@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 // OpenCode launches opencode against an OpenRouter model. The entire config
@@ -65,7 +64,7 @@ func (o *OpenCode) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("opencode: an OpenRouter API key is required")
 	}
-	if err := opencodeValidateExtraArgs(req.ExtraArgs); err != nil {
+	if err := rejectModelFlag("opencode", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	path, err := o.findPath()
@@ -86,19 +85,6 @@ func (o *OpenCode) Command(req Request) (Command, error) {
 		"OPENROUTER_API_KEY=" + req.APIKey,
 	}
 	return Command{Path: path, Args: append([]string(nil), req.ExtraArgs...), Env: env}, nil
-}
-
-// opencodeValidateExtraArgs rejects a passthrough model flag: the CLI flag
-// outranks the inline config, so it would silently beat the selected model.
-func opencodeValidateExtraArgs(args []string) error {
-	for _, arg := range args {
-		if arg == "-m" || arg == "--model" ||
-			strings.HasPrefix(arg, "--model=") ||
-			(strings.HasPrefix(arg, "-m") && len(arg) > len("-m")) {
-			return fmt.Errorf("opencode: conflicting argument %q: openrouter-launch manages the model; pick it with openrouter-launch opencode -m", arg)
-		}
-	}
-	return nil
 }
 
 // CheckInstalled reports whether the opencode binary can be found.

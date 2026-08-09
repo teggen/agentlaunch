@@ -65,12 +65,11 @@ func (c *Codex) Command(req Request) (Command, error) {
 // provider config. Later -c overrides win in codex, so silently accepting
 // these would let a user flag beat ours while the tool reports success.
 func codexValidateExtraArgs(args []string) error {
+	if err := rejectModelFlag("codex", args); err != nil {
+		return err
+	}
 	for i, arg := range args {
 		switch {
-		case arg == "-m" || arg == "--model" ||
-			strings.HasPrefix(arg, "--model=") ||
-			(strings.HasPrefix(arg, "-m") && len(arg) > len("-m")):
-			return fmt.Errorf("codex: conflicting argument %q: openrouter-launch manages the model; pick it with openrouter-launch codex -m", arg)
 		case arg == "-c" || arg == "--config":
 			if i+1 < len(args) && codexOverrideConflicts(args[i+1]) {
 				return fmt.Errorf("codex: conflicting override %s: openrouter-launch manages the model provider", args[i+1])
