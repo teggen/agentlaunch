@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -161,12 +162,45 @@ func TestClineApplyRestoresPriorProvidersFile(t *testing.T) {
 	if strings.Contains(string(got), "sk-or-ours") {
 		t.Error("our key survived restore in cline's own provider store")
 	}
+}
+
+// TestClineRestorePreservesProvidersFileMode is split out of the test above
+// and skipped on Windows, matching TestDroidPreservesSettingsFileMode: os.Chmod
+// there toggles only the read-only attribute, so a writable file always reads
+// back 0666 and the assertion could never hold. The property is Unix-only too.
+//
+// The mid-session file is deliberately given a WIDER mode than the snapshot:
+// restoring 0600 then proves the mode came from what we recorded at Apply
+// time, not from whatever happened to be on disk afterwards. This file holds
+// an API key, so a restore that widened it would be a real defect.
+func TestClineRestorePreservesProvidersFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	home := testHome(t)
+	path := clineProviders(t, home, `{"version":1,"providers":{}}`, 0o600)
+
+	c := &Cline{}
+	restore, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"providers":{"openrouter":{"settings":{"apiKey":"sk-or-ours"}}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("mode after restore = %v, want 0600 — the file holds a key", perm)
+		t.Errorf("mode after restore = %v, want the snapshotted 0600 — the file holds a key", perm)
 	}
 }
 
