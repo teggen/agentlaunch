@@ -61,7 +61,7 @@ type PlatformSupported interface {
 }
 
 // ConfigWriter is the escape hatch for agents that cannot be configured
-// through env vars or CLI overrides. Implemented by no agent in Phase 1.
+// through env vars or CLI overrides — implemented by droid since Phase 4.
 // An agent implementing it takes the fork-and-wait launch path so that the
 // returned restore function can run.
 type ConfigWriter interface {
