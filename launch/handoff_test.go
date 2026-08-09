@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
@@ -254,8 +255,9 @@ func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 
 type recordingConfigWriter struct {
 	fakeLauncher
-	log      *[]string
-	applyErr error
+	log        *[]string
+	applyErr   error
+	restoreErr error
 }
 
 func (r *recordingConfigWriter) Apply(agent.Request) (func() error, error) {
@@ -265,7 +267,7 @@ func (r *recordingConfigWriter) Apply(agent.Request) (func() error, error) {
 	*r.log = append(*r.log, "apply")
 	return func() error {
 		*r.log = append(*r.log, "restore")
-		return nil
+		return r.restoreErr
 	}, nil
 }
 
@@ -323,5 +325,27 @@ func TestLaunchConfigWriterApplyFailureSkipsRun(t *testing.T) {
 	}
 	if ran {
 		t.Error("agent ran despite Apply failure")
+	}
+}
+
+func TestLaunchConfigWriterRestoreErrorPreservesRunError(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var log []string
+	runErr := errors.New("agent exited 42")
+	restoreErr := errors.New("backup file corrupted")
+	svc := &Service{RunWait: func(agent.Command) error { return runErr }}
+	p := Plan{
+		Spec:    spec("fake", &recordingConfigWriter{log: &log, restoreErr: restoreErr}),
+		Command: agent.Command{Path: "/bin/true"},
+	}
+	err := svc.Launch(p, nil)
+	if !errors.Is(err, runErr) {
+		t.Errorf("err = %v, want runErr %v preserved (main extracts the exit code from it)", err, runErr)
+	}
+	if !slices.Contains(log, "restore") {
+		t.Error("restore did not run despite its error")
+	}
+	if !strings.Contains(err.Error(), "restore") {
+		t.Errorf("error text = %q, want to contain 'restore' (the restore failure must not be swallowed)", err.Error())
 	}
 }
