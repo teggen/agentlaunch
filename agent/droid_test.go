@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -108,6 +109,13 @@ func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Parse the original foreign entry to verify it is preserved unchanged
+	var priorSettings map[string]any
+	if err := json.Unmarshal([]byte(prior), &priorSettings); err != nil {
+		t.Fatalf("parse prior: %v", err)
+	}
+	priorForeignEntry := priorSettings["customModels"].([]any)[0]
+
 	d := &Droid{}
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
 	if err != nil {
@@ -120,6 +128,10 @@ func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
 	}
 	if models[0].(map[string]any)["displayName"] != "Mine" {
 		t.Error("foreign entry displaced from index 0")
+	}
+	// Deep-equal the foreign entry to ensure it matches the original exactly
+	if !reflect.DeepEqual(models[0], priorForeignEntry) {
+		t.Errorf("foreign entry after Apply = %v, want unchanged %v", models[0], priorForeignEntry)
 	}
 	// Ours is at index 1, so the selection ID must say 1.
 	if m["model"] != "custom:openrouter-launch-1" {
@@ -137,8 +149,15 @@ func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
 		t.Errorf("restore: model = %v, want prior gpt-5.5-codex", m["model"])
 	}
 	models = m["customModels"].([]any)
-	if len(models) != 1 || models[0].(map[string]any)["displayName"] != "Mine" {
-		t.Errorf("restore: customModels = %v, want only the foreign entry", models)
+	if len(models) != 1 {
+		t.Errorf("restore: customModels has %d entries, want 1", len(models))
+	}
+	// Deep-equal the foreign entry again to ensure restore preserved it exactly
+	if !reflect.DeepEqual(models[0], priorForeignEntry) {
+		t.Errorf("foreign entry after restore = %v, want unchanged %v", models[0], priorForeignEntry)
+	}
+	if m["theme"] != "dark" {
+		t.Errorf("restore: theme = %v, want dark", m["theme"])
 	}
 }
 
@@ -191,5 +210,68 @@ func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
 	}
 	if string(raw) != `{definitely not json` {
 		t.Error("unparseable file was modified")
+	}
+}
+
+func TestDroidRestoreKeepsFileWhenUserAddedEntriesMidSession(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	d := &Droid{}
+
+	// Apply on a fresh HOME (no file) — creates the file
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	path := droidSettingsPath(t, home)
+
+	// Simulate the user adding a foreign entry mid-session by rewriting the file
+	midSessionSettings := map[string]any{
+		"customModels": []any{
+			// Our marker entry (what Apply wrote)
+			map[string]any{
+				"displayName":     "openrouter-launch",
+				"provider":        "generic-chat-completion-api",
+				"baseUrl":         "https://openrouter.ai/api/v1",
+				"model":           "anthropic/claude-opus-4.6",
+				"apiKey":          "${OPENROUTER_API_KEY}",
+				"maxOutputTokens": float64(64000),
+			},
+			// User's foreign entry added mid-session
+			map[string]any{
+				"displayName": "UserAdded",
+				"provider":    "generic-chat-completion-api",
+				"baseUrl":     "http://custom",
+				"model":       "custom/model",
+				"apiKey":      "user-key",
+			},
+		},
+		"model": "custom:openrouter-launch-0",
+	}
+	data, err := json.MarshalIndent(midSessionSettings, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Restore should preserve the foreign entry and delete only our marker + model key
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	// File should still exist (foreign entry keeps it alive)
+	m := readDroidSettings(t, path)
+	models, ok := m["customModels"].([]any)
+	if !ok || len(models) != 1 {
+		t.Errorf("customModels = %v, want one foreign entry", models)
+	}
+	if got := models[0].(map[string]any)["displayName"]; got != "UserAdded" {
+		t.Errorf("foreign entry displayName = %v, want UserAdded", got)
+	}
+	// Our marker + model key should be gone
+	if _, ok := m["model"]; ok {
+		t.Errorf("model key still present after restore")
 	}
 }

@@ -187,7 +187,11 @@ func writeDroidSettingsFile(path string, settings map[string]any) error {
 		os.Remove(tmpName)
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 // CheckInstalled reports whether the droid binary can be found. The
