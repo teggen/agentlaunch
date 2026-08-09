@@ -91,10 +91,15 @@ var specs = []*Spec{
 		Description: "Personal AI assistant with a terminal session",
 		Status:      Status{Supported: true},
 	},
+	// droid's description is kept terse on purpose. It used to carry
+	// "(session-scoped managed config; Factory account required)", which made
+	// it the widest DESCRIPTION cell by a wide margin — and `agents` renders
+	// through tabwriter, so one long cell stretches the table. Both caveats
+	// are surfaced by the launcher itself when droid is actually run.
 	{
 		Name:        "droid",
 		Launcher:    &Droid{},
-		Description: "Factory's terminal coding agent (session-scoped managed config; Factory account required)",
+		Description: "Factory's terminal coding agent",
 		Status:      Status{Supported: true},
 	},
 	{
