@@ -60,8 +60,9 @@ type PlatformSupported interface {
 	Supported() error
 }
 
-// ConfigWriter is the escape hatch for agents that cannot be configured
-// through env vars or CLI overrides — implemented by droid since Phase 4.
+// ConfigWriter is the escape hatch for agents whose own config file has to
+// change for the launch to work — droid since Phase 4, and cline, whose Apply
+// exists only to snapshot and restore a file the AGENT writes (Landmine 36).
 // An agent implementing it takes the fork-and-wait launch path so that the
 // returned restore function can run.
 type ConfigWriter interface {
@@ -70,7 +71,8 @@ type ConfigWriter interface {
 
 // CredentialShadowCheck reports stored agent-side state that would make a
 // launch ignore the environment this tool provides — a saved credential
-// that outranks env vars (pi, cline, hermes document exactly that), or a
+// that outranks env vars (pi and hermes document exactly that; cline did
+// too until its key moved to argv, see Landmine 36), or a
 // binary generation that does not read them (legacy kimi-cli). Read-only
 // and best-effort: implementations must never write, and must return ""
 // (no warning) when the state is absent, unreadable, or unparseable —
