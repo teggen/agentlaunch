@@ -107,3 +107,37 @@ func TestMergeFiltersProviderAndSearchAlwaysComeFromFlags(t *testing.T) {
 		t.Errorf("Search = %q, want opus", got.Search)
 	}
 }
+
+func TestSortFromDegradesAnUnknownColumnToRelevance(t *testing.T) {
+	// "prompt" was the column's name before the INPUT/OUTPUT rename, so this
+	// is the value a config written by an older build could hold.
+	if got := SortFrom(config.Sort{Column: "prompt", Desc: true}); got != (openrouter.Sort{}) {
+		t.Errorf("SortFrom(unknown column) = %+v, want the zero Sort", got)
+	}
+	if got := SortFrom(config.Sort{Column: "output", Desc: true}); got !=
+		(openrouter.Sort{Key: openrouter.SortOutput, Desc: true}) {
+		t.Errorf("SortFrom(valid) = %+v", got)
+	}
+}
+
+func TestMergeSortPrefersTypedFlagsOverThePersistedSort(t *testing.T) {
+	persisted := config.Sort{Column: "context", Desc: true}
+	flags := openrouter.Sort{Key: openrouter.SortInput, Desc: false}
+
+	if got := MergeSort(persisted, flags, changedSet()); got !=
+		(openrouter.Sort{Key: openrouter.SortContext, Desc: true}) {
+		t.Errorf("with no flag typed, MergeSort = %+v, want the persisted sort", got)
+	}
+
+	if got := MergeSort(persisted, flags, changedSet(FlagSort)); got !=
+		(openrouter.Sort{Key: openrouter.SortInput, Desc: true}) {
+		t.Errorf("--sort alone = %+v, want the flag's key and the persisted direction", got)
+	}
+
+	// The predicate is what makes an explicit --desc=false distinguishable
+	// from an absent --desc, exactly as for --tools.
+	if got := MergeSort(persisted, flags, changedSet(FlagDesc)); got !=
+		(openrouter.Sort{Key: openrouter.SortContext, Desc: false}) {
+		t.Errorf("--desc=false alone = %+v, want the persisted key ascending", got)
+	}
+}

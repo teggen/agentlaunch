@@ -13,6 +13,8 @@ const (
 	FlagFree       = "free"
 	FlagMinContext = "min-context"
 	FlagMaxPrice   = "max-price"
+	FlagSort       = "sort"
+	FlagDesc       = "desc"
 )
 
 // FilterFrom converts persisted filter state into a catalog filter. Provider
@@ -53,5 +55,36 @@ func MergeFilters(persisted config.Filters, flags openrouter.Filter,
 	}
 	out.Provider = flags.Provider
 	out.Search = flags.Search
+	return out
+}
+
+// SortFrom converts the persisted ordering into a catalog sort. An
+// unrecognised column degrades to relevance rather than erroring: config.Sort
+// holds a plain string, and a hand-edited or older-build value must not make
+// `orl models` unusable. The command line is the opposite case — see
+// newModelsCmd, where a typo is a hard error, because the user is standing
+// right there and a silent catalog order would look like the sort applied.
+func SortFrom(s config.Sort) openrouter.Sort {
+	key, err := openrouter.ParseSortKey(s.Column)
+	if err != nil {
+		return openrouter.Sort{}
+	}
+	return openrouter.Sort{Key: key, Desc: s.Desc}
+}
+
+// MergeSort returns the persisted sort overridden by each flag the user
+// explicitly set, with the same changed-predicate rule MergeFilters uses and
+// for the same reason: an explicit --desc=false and an absent --desc are both
+// false by value.
+func MergeSort(persisted config.Sort, flags openrouter.Sort,
+	changed func(string) bool) openrouter.Sort {
+
+	out := SortFrom(persisted)
+	if changed(FlagSort) {
+		out.Key = flags.Key
+	}
+	if changed(FlagDesc) {
+		out.Desc = flags.Desc
+	}
 	return out
 }
