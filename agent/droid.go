@@ -86,7 +86,10 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 
 	priorModel, hadModel := settings["model"]
 
-	kept := foreignDroidModels(settings)
+	kept, err := foreignDroidModels(path, settings)
+	if err != nil {
+		return nil, err
+	}
 	entry := map[string]any{
 		"displayName":     droidMarker,
 		"provider":        "generic-chat-completion-api",
@@ -107,7 +110,10 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 		if err != nil {
 			return err
 		}
-		kept := foreignDroidModels(settings)
+		kept, err := foreignDroidModels(path, settings)
+		if err != nil {
+			return err
+		}
 		if len(kept) == 0 {
 			delete(settings, "customModels")
 		} else {
@@ -150,8 +156,21 @@ func readDroidSettingsFile(path string) (map[string]any, bool, error) {
 
 // foreignDroidModels returns customModels entries we do not own, in their
 // original order. A user editing the file mid-session keeps their entries.
-func foreignDroidModels(settings map[string]any) []any {
-	models, _ := settings["customModels"].([]any)
+//
+// A customModels that is present but not a list is an error rather than an
+// empty result. Treating it as empty would let Apply overwrite the user's
+// value and restore then delete the key, losing it for good — which breaks
+// both readDroidSettingsFile's "never clobber what we cannot understand" rule
+// and Apply's promise to return the restore that undoes exactly what it did.
+func foreignDroidModels(path string, settings map[string]any) ([]any, error) {
+	raw, present := settings["customModels"]
+	if !present {
+		return nil, nil
+	}
+	models, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("droid: customModels in %s is %T, not a list; refusing to modify it", path, raw)
+	}
 	var kept []any
 	for _, item := range models {
 		if entry, ok := item.(map[string]any); ok && entry["displayName"] == droidMarker {
@@ -159,7 +178,7 @@ func foreignDroidModels(settings map[string]any) []any {
 		}
 		kept = append(kept, item)
 	}
-	return kept
+	return kept, nil
 }
 
 // writeDroidSettingsFile writes atomically: temp file in the same dir, then

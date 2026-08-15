@@ -379,3 +379,33 @@ func TestDroidRestoreKeepsFileWhenUserAddedEntriesMidSession(t *testing.T) {
 		t.Errorf("model key still present after restore")
 	}
 }
+
+// TestDroidApplyRefusesWrongShapedCustomModels extends "never clobber what we
+// cannot understand" from the whole-file parse to the one field we rewrite.
+// A customModels that is valid JSON of another type used to fail the type
+// assertion silently: Apply replaced the user's value and restore then took
+// the len(kept)==0 branch and deleted the key outright.
+func TestDroidApplyRefusesWrongShapedCustomModels(t *testing.T) {
+	home := testHome(t)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.local.json")
+	original := `{"customModels":"see the other file","model":"custom:theirs"}`
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{}
+	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err == nil {
+		t.Fatal("Apply accepted a customModels it could not understand")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != original {
+		t.Errorf("file was modified:\n got %s\nwant %s", raw, original)
+	}
+}
