@@ -157,14 +157,22 @@ func readDroidSettingsFile(path string) (map[string]any, bool, error) {
 // foreignDroidModels returns customModels entries we do not own, in their
 // original order. A user editing the file mid-session keeps their entries.
 //
-// A customModels that is present but not a list is an error rather than an
-// empty result. Treating it as empty would let Apply overwrite the user's
-// value and restore then delete the key, losing it for good — which breaks
-// both readDroidSettingsFile's "never clobber what we cannot understand" rule
-// and Apply's promise to return the restore that undoes exactly what it did.
+// A customModels that is present and holds a real, non-list value (a
+// string, an object, a number) is an error rather than an empty result.
+// Treating it as empty would let Apply overwrite the user's value and
+// restore then delete the key, losing it for good — which breaks both
+// readDroidSettingsFile's "never clobber what we cannot understand" rule and
+// Apply's promise to return the restore that undoes exactly what it did.
+//
+// JSON null is deliberately exempt from that refusal. It decodes to a Go nil
+// interface, so it fails the []any type assertion exactly like a string or
+// object would — but unlike those, null carries no entries to lose: treating
+// it as empty and letting Apply replace it (restore then deletes the key) is
+// exactly what happened before this guard existed, and nothing was lost then
+// either.
 func foreignDroidModels(path string, settings map[string]any) ([]any, error) {
 	raw, present := settings["customModels"]
-	if !present {
+	if !present || raw == nil { // JSON null carries no entries to preserve
 		return nil, nil
 	}
 	models, ok := raw.([]any)

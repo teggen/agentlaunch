@@ -409,3 +409,46 @@ func TestDroidApplyRefusesWrongShapedCustomModels(t *testing.T) {
 		t.Errorf("file was modified:\n got %s\nwant %s", raw, original)
 	}
 }
+
+// TestDroidApplyAcceptsNullCustomModels pins the fix for a regression the
+// wrong-shape guard above introduced. JSON null decodes to a Go nil
+// interface, so {"customModels": null} is "present" (present == true, raw ==
+// nil) and fails the []any type assertion exactly like a string or object
+// does — the guard above turned that into a hard error, blocking every droid
+// launch against a settings file shaped this way. Unlike a string or object,
+// null holds no entries to lose: before the wrong-shape guard existed, Apply
+// simply replaced it and restore deleted the key, and nothing was lost. This
+// pins that null keeps working while the string case above keeps failing.
+func TestDroidApplyAcceptsNullCustomModels(t *testing.T) {
+	home := testHome(t)
+	dir := filepath.Join(home, ".factory")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "settings.local.json")
+	if err := os.WriteFile(path, []byte(`{"customModels":null,"model":"custom:theirs"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{}
+	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
+	if err != nil {
+		t.Fatalf("Apply refused a null customModels: %v", err)
+	}
+	m := readDroidSettings(t, path)
+	models, ok := m["customModels"].([]any)
+	if !ok || len(models) != 1 {
+		t.Fatalf("customModels = %v, want exactly our one entry", m["customModels"])
+	}
+
+	if err := restore(); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	m = readDroidSettings(t, path)
+	if _, ok := m["customModels"]; ok {
+		t.Errorf("restore left customModels behind: %v", m["customModels"])
+	}
+	if m["model"] != "custom:theirs" {
+		t.Errorf("restore: model = %v, want prior custom:theirs", m["model"])
+	}
+}
