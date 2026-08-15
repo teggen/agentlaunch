@@ -157,3 +157,14 @@ func TestQwenInstallHint(t *testing.T) {
 		t.Errorf("InstallHint = %q", hint)
 	}
 }
+
+// TestQwenDoesNotClaimCredentialShadowing pins the same decision for qwen,
+// whose gap is a different shape: a modelProviders.openai[] entry in
+// ~/.qwen/settings.json may outrank --auth-type openai, and no detector ships
+// because the collision has never been confirmed against a real qwen install.
+// A detector added before that evidence exists would be guessing.
+func TestQwenDoesNotClaimCredentialShadowing(t *testing.T) {
+	if _, ok := any(&Qwen{}).(CredentialShadowCheck); ok {
+		t.Error("*Qwen implements CredentialShadowCheck; no detector ships pending live evidence")
+	}
+}

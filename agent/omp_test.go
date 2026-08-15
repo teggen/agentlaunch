@@ -86,3 +86,15 @@ func TestOMPInstallHint(t *testing.T) {
 		t.Errorf("InstallHint = %q", hint)
 	}
 }
+
+// TestOMPDoesNotClaimCredentialShadowing pins a declined dependency as a
+// decision with a test to answer rather than a comment to overlook. omp's
+// stored credentials live in a SQLite database (~/.omp/agent/agent.db) and
+// outrank the env key, but reading them would mean taking a sqlite dependency
+// for one advisory string. If you are here because you added a check, update
+// the README caveat that promises omp gets no warning.
+func TestOMPDoesNotClaimCredentialShadowing(t *testing.T) {
+	if _, ok := any(&OMP{}).(CredentialShadowCheck); ok {
+		t.Error("*OMP implements CredentialShadowCheck; the sqlite dependency was deliberately declined")
+	}
+}
