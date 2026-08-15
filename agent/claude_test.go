@@ -182,3 +182,31 @@ func TestClaudeSatisfiesInterfaces(t *testing.T) {
 	var _ Installable = &Claude{}
 	var _ Compatible = &Claude{}
 }
+
+// TestClaudeCommandRejectsConflictingExtras pins claude into the rule the
+// other ten launchers already follow. Claude Code's own --model outranks the
+// managed one on argv, and the ANTHROPIC_DEFAULT_*_MODEL env vars keep
+// pointing at ours, so accepting both would run the session and its subagents
+// on different models while every report says the managed one.
+func TestClaudeCommandRejectsConflictingExtras(t *testing.T) {
+	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	for _, extras := range [][]string{
+		{"-m", "x/y"}, {"-mx/y"}, {"--model", "x/y"}, {"--model=x/y"},
+	} {
+		if _, err := c.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: extras}); err == nil {
+			t.Errorf("extras %q accepted, want conflict error", extras)
+		}
+	}
+
+	// The rule is about the conflict, not a ban on passthrough: everything
+	// that does not touch the managed model must still reach argv, in order.
+	cmd, err := c.Command(Request{Model: testModel(), APIKey: "k",
+		ExtraArgs: []string{"--resume", "--verbose"}})
+	if err != nil {
+		t.Fatalf("benign extras rejected: %v", err)
+	}
+	want := []string{"--model", "anthropic/claude-opus-4.6", "--resume", "--verbose"}
+	if !slices.Equal(cmd.Args, want) {
+		t.Errorf("Args = %v, want %v", cmd.Args, want)
+	}
+}

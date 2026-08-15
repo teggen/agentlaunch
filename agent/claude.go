@@ -65,6 +65,15 @@ func (c *Claude) Command(req Request) (Command, error) {
 		return Command{}, fmt.Errorf("claude: an OpenRouter API key is required")
 	}
 
+	// Claude Code's own --model wins on argv, and it would win only there:
+	// the ANTHROPIC_DEFAULT_*_MODEL and CLAUDE_CODE_SUBAGENT_MODEL vars below
+	// still carry the managed model, so a passthrough --model splits the
+	// session between two models while the tool reports one. Landmine 3's
+	// failure class, on argv — same reason the other ten launchers reject it.
+	if err := rejectModelFlag("claude", req.ExtraArgs); err != nil {
+		return Command{}, err
+	}
+
 	path, err := c.findPath()
 	if err != nil {
 		return Command{}, err
