@@ -35,6 +35,29 @@ func RunWait(c Command) error {
 			// Best-effort forward: the child may have already exited between
 			// the signal arriving and this call, so a failed Signal is not
 			// actionable here.
+			//
+			// Note this forward DUPLICATES a keyboard interrupt. The child is
+			// not given a process group of its own, so it stays in the
+			// terminal's foreground group with us and the tty delivers Ctrl+C
+			// to both of us directly; the forward below is then a second
+			// SIGINT for the child. An agent that treats interrupt
+			// idempotently — every one we launch, as far as measured — cannot
+			// tell the difference, but one that COUNTS interrupts (first press
+			// cancels the current turn, second exits) would see one keypress
+			// as two.
+			//
+			// Left as is on purpose. Setting SysProcAttr.Setpgid to isolate
+			// the child stops the duplication, but it also takes the child out
+			// of the foreground process group, so its first read from the
+			// terminal raises SIGTTIN and an interactive session hangs
+			// instead. Doing it properly means transferring terminal
+			// ownership with tcsetpgrp and handing it back afterwards,
+			// including on the panic path — a real amount of new
+			// signal-handling surface for both ConfigWriter agents (droid,
+			// cline) to fix a cosmetic double-interrupt neither one exhibits.
+			// The forward itself is not optional: it is what lets a SIGTERM
+			// from outside the terminal reach the child at all, and Ctrl+C is
+			// the only case where the tty has already done our job for us.
 			_ = cmd.Process.Signal(s)
 		case err := <-done:
 			return err

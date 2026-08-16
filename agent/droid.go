@@ -74,6 +74,18 @@ func (d *Droid) Command(req Request) (Command, error) {
 // Apply upserts the marker-owned model entry and default-model key, and
 // returns the restore that undoes exactly that. An unparseable settings
 // file is a hard error — never clobber what we cannot understand.
+//
+// NOT SAFE against a concurrent launcher session of droid, for a different
+// reason than cline's. priorModel is captured from the file as it stands, so
+// a second Apply that starts while our session runs records OUR marker value
+// as the thing to restore, and also evicts our live entry (foreignDroidModels
+// keeps only NON-marker entries, so it drops ours while adding its own). The
+// second restore to run then finds no marker entries left to strip and writes
+// `model` back to a `custom:openrouter-launch-*` name that nothing defines —
+// leaving the user a dangling reference to clear by hand. Serialising it
+// needs a lock spanning Apply, the run and the restore, which would be a
+// sixth Landmine 6 write site; documented in README "Known caveats" instead,
+// by owner decision (2026-08-16).
 func (d *Droid) Apply(req Request) (func() error, error) {
 	path, err := droidSettingsFile()
 	if err != nil {

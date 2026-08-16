@@ -246,6 +246,131 @@ func TestLaunchStagesIntoAPrivateDir(t *testing.T) {
 	}
 }
 
+// TestLaunchStagedFileModeIsAppliedOverAnExistingFile pins the reason write
+// site #3 uses the temp+rename shape (the Landmine 9 form) rather than a
+// plain os.WriteFile, which is what it used to do.
+//
+// os.WriteFile passes its mode to open(2) as the CREATE mode, and open
+// applies that only when it creates the file. Against an existing path the
+// mode argument is silently ignored, so a staged file that once landed with
+// a wide mode keeps it forever no matter what StagedFiles declares — the
+// declared 0600 becomes a value the code states and does not enforce.
+// Rename-over-a-temp-file has no such gap: the mode belongs to the new inode
+// and replaces whatever was there.
+//
+// Both directions are exercised deliberately. The narrowing case (0644 file,
+// 0600 declared) is the one that matters in production, but it CANNOT on its
+// own prove the mode was applied: os.CreateTemp already creates its file
+// 0600, so that case passes with the chmod deleted. Only the broadening case
+// distinguishes "we set the declared mode" from "the temp file's default
+// happened to be the answer".
+func TestLaunchStagedFileModeIsAppliedOverAnExistingFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are not meaningful on Windows")
+	}
+	tests := []struct {
+		name     string
+		existing os.FileMode
+		declared os.FileMode
+	}{
+		{"narrows a stale broad file", 0o644, 0o600},
+		{"broadens past the temp file's 0600 default", 0o600, 0o644},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			dir, err := config.Dir()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "openclaw.json")
+			// A stale file from an earlier run, at the mode this case starts from.
+			if err := os.WriteFile(path, []byte(`{"stale":true}`), tt.existing); err != nil {
+				t.Fatal(err)
+			}
+			// Chmod separately: os.WriteFile's mode is subject to the umask,
+			// which would otherwise narrow the starting point out from under us.
+			if err := os.Chmod(path, tt.existing); err != nil {
+				t.Fatal(err)
+			}
+
+			svc := &Service{Run: func(agent.Command) error { return nil }}
+			p := Plan{
+				Spec:    spec("fake", &fakeLauncher{}),
+				Command: agent.Command{Path: "/bin/true"},
+				Staged: []agent.StagedFile{{
+					Path:     path,
+					Contents: []byte(`{"agents":{}}`),
+					Mode:     tt.declared,
+				}},
+			}
+			if err := svc.Launch(p, nil); err != nil {
+				t.Fatalf("Launch: %v", err)
+			}
+
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != tt.declared {
+				t.Errorf("mode = %o, want %o: the declared mode must replace the existing file's", got, tt.declared)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != `{"agents":{}}` {
+				t.Errorf("contents = %q, want the staged contents", got)
+			}
+		})
+	}
+}
+
+// TestLaunchStagedFileLeavesNoTempBehind guards the other half of the
+// temp+rename shape: the temp file must be renamed into place, not left
+// beside it. Our config dir is also the openclaw config dir for the session,
+// so a stray .openclaw-*.json is a file the agent may try to read.
+func TestLaunchStagedFileLeavesNoTempBehind(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir, err := config.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{Run: func(agent.Command) error { return nil }}
+	p := Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged: []agent.StagedFile{{
+			Path:     filepath.Join(dir, "openclaw.json"),
+			Contents: []byte(`{}`),
+			Mode:     0o600,
+		}},
+	}
+	if err := svc.Launch(p, nil); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Asserting on the dot prefix rather than on an exact directory listing:
+	// Launch also writes config.json here via recordSelection, and pinning the
+	// full listing would make this test fail for that unrelated reason. Staged
+	// temp files are dot-prefixed, the same convention writeClineProvidersFile
+	// uses.
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			t.Errorf("leftover temp file %q in the config dir; it must be renamed into place, not abandoned", e.Name())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "openclaw.json")); err != nil {
+		t.Errorf("staged file missing after Launch: %v", err)
+	}
+}
+
 func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	// Case 1: unrelated directory (no shared prefix)
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())

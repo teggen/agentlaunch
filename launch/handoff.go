@@ -77,11 +77,59 @@ func stageFiles(files []agent.StagedFile) error {
 		if err := os.MkdirAll(filepath.Dir(f.Path), 0o700); err != nil {
 			return err
 		}
-		if err := os.WriteFile(f.Path, f.Contents, f.Mode); err != nil {
+		if err := writeStagedFile(f.Path, f.Contents, f.Mode); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// writeStagedFile writes one launcher-owned file atomically: temp file in the
+// target directory, chmod, then rename — the Landmine 9 shape the other four
+// write sites already use.
+//
+// The chmod is the part that changes behavior rather than merely tidying it.
+// os.WriteFile, which this replaced, hands its mode to open(2) as the CREATE
+// mode, and open applies that only when it actually creates the file; against
+// an existing path the mode is silently ignored. So a staged file that once
+// landed at a broad mode kept it for every later launch, and the 0600
+// StagedFiles declares was a value the code stated without enforcing. A
+// rename gives the path a new inode whose mode we set outright, so the
+// declared mode is the mode on disk every time.
+//
+// Atomicity is the lesser gain here but still real: the openclaw config is
+// read by the process we hand off to moments later, and a reader can now
+// only ever see the whole file or the previous one, never a prefix.
+func writeStagedFile(path string, contents []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	// Dot-prefixed so a temp file surviving a crash is hidden from the agent
+	// that reads this directory, matching writeClineProvidersFile's pattern.
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup: on success the rename has already moved this file
+	// so Remove fails with ENOENT and says nothing, and on the error paths the
+	// error being returned is the one worth reporting. The explicit `_ =`
+	// marks the choice for errcheck.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	// Explicit rather than inheriting os.CreateTemp's 0600: the declared mode
+	// is the point of this function, and it may be either narrower or broader
+	// than the default.
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(contents); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // launchConfigWriter is the fork-and-wait path: Apply writes the agent's

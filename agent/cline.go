@@ -107,6 +107,17 @@ func clineProvidersFile() (string, error) {
 // nothing. Model and key both reach cline on argv (Command), so there is
 // nothing here to derive from the request; taking it is the interface's
 // shape, not a need of ours.
+//
+// NOT SAFE against a concurrent launcher session of cline. The snapshot is
+// taken from whatever is on disk, so two overlapping sessions interleave as:
+// A snapshots the user's clean file, cline persists our key, B snapshots THAT
+// (key included), A restores clean, B restores the copy holding the key —
+// which then outlives every session, the one outcome this function exists to
+// prevent. Serialising it needs a lock held across Apply, the run, and the
+// restore, i.e. one owned by the launch service rather than by this method,
+// and a lock file is a sixth write site under Landmine 6. Documented in
+// README "Known caveats" instead, by owner decision (2026-08-16); the tool
+// assumes one session at a time throughout.
 func (c *Cline) Apply(_ Request) (func() error, error) {
 	path, err := clineProvidersFile()
 	if err != nil {
