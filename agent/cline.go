@@ -43,6 +43,10 @@ import (
 // no working alternative — and it makes cline persist the key into its own
 // provider store, which is what Apply exists to undo.
 type Cline struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -66,10 +70,10 @@ func (c *Cline) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("cline: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("cline", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(c.Host, "cline", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("cline", req.ExtraArgs, "-P", "--provider", "-k", "--key"); err != nil {
+	if err := rejectFlags(c.Host, "cline", req.ExtraArgs, "-P", "--provider", "-k", "--key"); err != nil {
 		return Command{}, err
 	}
 	path, err := c.lookPath("cline")

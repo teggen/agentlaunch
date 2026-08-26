@@ -20,6 +20,10 @@ import (
 // caveat lives in the spec and README. Doc-verified on 17.2.11
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/omp.md.
 type OMP struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -62,10 +66,10 @@ func (o *OMP) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("omp: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("omp", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(o.Host, "omp", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("omp", req.ExtraArgs, "--provider"); err != nil {
+	if err := rejectFlags(o.Host, "omp", req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
 	path, err := o.findPath()

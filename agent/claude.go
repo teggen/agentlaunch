@@ -18,6 +18,10 @@ const AnthropicBaseURL = "https://openrouter.ai/api"
 
 // Claude launches Claude Code against an OpenRouter model.
 type Claude struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -70,7 +74,7 @@ func (c *Claude) Command(req Request) (Command, error) {
 	// still carry the managed model, so a passthrough --model splits the
 	// session between two models while the tool reports one. Landmine 3's
 	// failure class, on argv — same reason the other ten launchers reject it.
-	if err := rejectModelFlag("claude", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(c.Host, "claude", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 

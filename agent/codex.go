@@ -12,6 +12,10 @@ import (
 // configuration travels as -c overrides on the command line; nothing is
 // written into ~/.codex.
 type Codex struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -35,7 +39,7 @@ func (c *Codex) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("codex: an OpenRouter API key is required")
 	}
-	if err := codexValidateExtraArgs(req.ExtraArgs); err != nil {
+	if err := codexValidateExtraArgs(c.Host, req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	path, err := c.lookPath("codex")
@@ -64,23 +68,23 @@ func (c *Codex) Command(req Request) (Command, error) {
 // codexValidateExtraArgs rejects passthrough that would defeat the managed
 // provider config. Later -c overrides win in codex, so silently accepting
 // these would let a user flag beat ours while the tool reports success.
-func codexValidateExtraArgs(args []string) error {
-	if err := rejectModelFlag("codex", args); err != nil {
+func codexValidateExtraArgs(host Host, args []string) error {
+	if err := rejectModelFlag(host, "codex", args); err != nil {
 		return err
 	}
 	for i, arg := range args {
 		switch {
 		case arg == "-c" || arg == "--config":
 			if i+1 < len(args) && codexOverrideConflicts(args[i+1]) {
-				return fmt.Errorf("codex: conflicting override %s: openrouter-launch manages the model provider", args[i+1])
+				return fmt.Errorf("codex: conflicting override %s: %s manages the model provider", args[i+1], host.Name)
 			}
 		case strings.HasPrefix(arg, "-c") && len(arg) > len("-c"):
 			if codexOverrideConflicts(strings.TrimPrefix(arg, "-c")) {
-				return fmt.Errorf("codex: conflicting override %s: openrouter-launch manages the model provider", arg)
+				return fmt.Errorf("codex: conflicting override %s: %s manages the model provider", arg, host.Name)
 			}
 		case strings.HasPrefix(arg, "--config="):
 			if codexOverrideConflicts(strings.TrimPrefix(arg, "--config=")) {
-				return fmt.Errorf("codex: conflicting override %s: openrouter-launch manages the model provider", arg)
+				return fmt.Errorf("codex: conflicting override %s: %s manages the model provider", arg, host.Name)
 			}
 		}
 	}

@@ -23,6 +23,10 @@ import (
 // .superpowers/sdd/2026-08-09-tier-2-research/kimi.md). Doc-verified on
 // kimi-code 0.34.0, KIMI_MODEL_* channel present since 0.6.0 (2026-08-09).
 type Kimi struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -84,10 +88,10 @@ func (k *Kimi) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("kimi: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("kimi", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(k.Host, "kimi", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("kimi", req.ExtraArgs, "--config", "--config-file"); err != nil {
+	if err := rejectFlags(k.Host, "kimi", req.ExtraArgs, "--config", "--config-file"); err != nil {
 		return Command{}, err
 	}
 	path, err := k.findPath()

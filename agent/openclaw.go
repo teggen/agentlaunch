@@ -23,6 +23,10 @@ import (
 // --auth-env-only compose config in memory. Doc-verified on 2026.7.1-2
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/openclaw.md.
 type OpenClaw struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -77,11 +81,11 @@ func (o *OpenClaw) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("openclaw: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("openclaw", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(o.Host, "openclaw", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	if len(req.ExtraArgs) > 0 && !strings.HasPrefix(req.ExtraArgs[0], "-") && req.ExtraArgs[0] != "agent" {
-		return Command{}, fmt.Errorf("openclaw: passthrough %q is platform administration, not a launch: openrouter-launch runs \"openclaw tui --local\" (or \"agent exec …\" passthrough)", req.ExtraArgs[0])
+		return Command{}, fmt.Errorf("openclaw: passthrough %q is platform administration, not a launch: %s runs \"openclaw tui --local\" (or \"agent exec …\" passthrough)", req.ExtraArgs[0], o.Host.Name)
 	}
 	path, err := o.findPath()
 	if err != nil {

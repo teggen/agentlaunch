@@ -30,6 +30,10 @@ const hermesMinContext = 64000
 // Doc-verified on v0.20.0 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/hermes.md.
 type Hermes struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -77,14 +81,14 @@ func (h *Hermes) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("hermes: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("hermes", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(h.Host, "hermes", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("hermes", req.ExtraArgs, "--provider"); err != nil {
+	if err := rejectFlags(h.Host, "hermes", req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
 	if len(req.ExtraArgs) > 0 && !strings.HasPrefix(req.ExtraArgs[0], "-") {
-		return Command{}, fmt.Errorf("hermes: passthrough %q looks like a hermes subcommand: openrouter-launch always runs \"hermes chat\"; pass chat flags only", req.ExtraArgs[0])
+		return Command{}, fmt.Errorf("hermes: passthrough %q looks like a hermes subcommand: %s always runs \"hermes chat\"; pass chat flags only", req.ExtraArgs[0], h.Host.Name)
 	}
 	path, err := h.findPath()
 	if err != nil {

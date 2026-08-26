@@ -15,6 +15,10 @@ import (
 // particular not opencode's model-state file, which ollama's integration
 // edits and we deliberately do not.
 type OpenCode struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -64,7 +68,7 @@ func (o *OpenCode) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("opencode: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("opencode", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(o.Host, "opencode", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	path, err := o.findPath()

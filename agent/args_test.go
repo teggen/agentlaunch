@@ -7,7 +7,7 @@ import (
 
 func TestRejectModelFlag(t *testing.T) {
 	for _, arg := range []string{"-m", "-mfoo", "--model", "--model=x/y"} {
-		err := rejectModelFlag("pi", []string{"--verbose", arg})
+		err := rejectModelFlag(testHost(), "pi", []string{"--verbose", arg})
 		if err == nil {
 			t.Errorf("%q accepted, want error", arg)
 			continue
@@ -16,7 +16,7 @@ func TestRejectModelFlag(t *testing.T) {
 			t.Errorf("%q: error %q does not name the argument and agent", arg, err)
 		}
 	}
-	if err := rejectModelFlag("pi", []string{"--verbose", "-p", "hello", "--mode", "fast"}); err != nil {
+	if err := rejectModelFlag(testHost(), "pi", []string{"--verbose", "-p", "hello", "--mode", "fast"}); err != nil {
 		t.Errorf("benign args rejected: %v", err)
 	}
 }
@@ -35,7 +35,7 @@ func TestRejectModelFlag(t *testing.T) {
 // intended.
 func TestRejectModelFlagHedgesOnAttachedPrefixMatches(t *testing.T) {
 	for _, arg := range []string{"-m", "--model", "--model=x/y"} {
-		err := rejectModelFlag("pi", []string{arg})
+		err := rejectModelFlag(testHost(), "pi", []string{arg})
 		if err == nil {
 			t.Fatalf("%q accepted, want error", arg)
 		}
@@ -44,7 +44,7 @@ func TestRejectModelFlagHedgesOnAttachedPrefixMatches(t *testing.T) {
 		}
 	}
 	for _, arg := range []string{"-mfoo", "-mode"} {
-		err := rejectModelFlag("pi", []string{arg})
+		err := rejectModelFlag(testHost(), "pi", []string{arg})
 		if err == nil {
 			t.Fatalf("%q accepted, want error", arg)
 		}
@@ -61,7 +61,7 @@ func TestRejectModelFlagHedgesOnAttachedPrefixMatches(t *testing.T) {
 // the short-flag attached form, which today reaches "-P" and "-k" on cline.
 func TestRejectFlagsHedgesOnAttachedPrefixMatches(t *testing.T) {
 	for _, arg := range []string{"-P", "--provider", "--provider=x"} {
-		err := rejectFlags("cline", []string{arg}, "--provider", "-P")
+		err := rejectFlags(testHost(), "cline", []string{arg}, "--provider", "-P")
 		if err == nil {
 			t.Fatalf("%q accepted, want error", arg)
 		}
@@ -70,7 +70,7 @@ func TestRejectFlagsHedgesOnAttachedPrefixMatches(t *testing.T) {
 		}
 	}
 	for _, arg := range []string{"-Pval", "-Persist"} {
-		err := rejectFlags("cline", []string{arg}, "--provider", "-P")
+		err := rejectFlags(testHost(), "cline", []string{arg}, "--provider", "-P")
 		if err == nil {
 			t.Fatalf("%q accepted, want error", arg)
 		}
@@ -86,7 +86,7 @@ func TestRejectFlagsHedgesOnAttachedPrefixMatches(t *testing.T) {
 func TestRejectFlags(t *testing.T) {
 	// Long flag: separate and equals forms. Short flag: separate, attached.
 	for _, arg := range []string{"--provider", "--provider=x", "-P", "-Px"} {
-		err := rejectFlags("cline", []string{arg}, "--provider", "-P")
+		err := rejectFlags(testHost(), "cline", []string{arg}, "--provider", "-P")
 		if err == nil {
 			t.Errorf("%q accepted, want error", arg)
 			continue
@@ -97,8 +97,96 @@ func TestRejectFlags(t *testing.T) {
 	}
 	// --providerfoo is a DIFFERENT flag, not an attached form of --provider.
 	for _, arg := range []string{"--providerfoo", "-Q", "--prov"} {
-		if err := rejectFlags("cline", []string{arg}, "--provider", "-P"); err != nil {
+		if err := rejectFlags(testHost(), "cline", []string{arg}, "--provider", "-P"); err != nil {
 			t.Errorf("%q rejected, want accepted: %v", arg, err)
+		}
+	}
+}
+
+// TestArgGuardsNameTheHost pins that the guidance text comes from the Host
+// rather than from a string literal. Both guards, and both match kinds each,
+// since the two kinds build their message separately.
+func TestArgGuardsNameTheHost(t *testing.T) {
+	host := Host{Name: "zzz-launch", Marker: "zzz"}
+	errs := []error{
+		rejectModelFlag(host, "pi", []string{"-m"}),
+		rejectModelFlag(host, "pi", []string{"-mfoo"}),
+		rejectFlags(host, "cline", []string{"--provider"}, "--provider"),
+		rejectFlags(host, "cline", []string{"-Pfoo"}, "-P"),
+	}
+	for _, err := range errs {
+		if err == nil {
+			t.Fatal("guard accepted a conflicting argument")
+		}
+		if !strings.Contains(err.Error(), "zzz-launch") {
+			t.Errorf("error %q does not name the host", err)
+		}
+		if strings.Contains(err.Error(), "openrouter-launch") {
+			t.Errorf("error %q still names a hardcoded host", err)
+		}
+	}
+}
+
+// TestEveryLauncherPassesItsOwnHostToTheArgGuards is the check that a
+// per-launcher Host field is actually threaded, rather than each launcher
+// reaching for a package-level default that happens to hold the same value.
+//
+// Every launcher runs its passthrough guards before it resolves a binary, so
+// this needs no PATH and no home directory.
+func TestEveryLauncherPassesItsOwnHostToTheArgGuards(t *testing.T) {
+	host := Host{Name: "zzz-launch", Marker: "zzz"}
+	launchers := []Launcher{
+		&Claude{Host: host}, &Codex{Host: host}, &OpenCode{Host: host},
+		&Pi{Host: host}, &Hermes{Host: host}, &Qwen{Host: host},
+		&Cline{Host: host}, &Kimi{Host: host}, &OMP{Host: host},
+		&OpenClaw{Host: host}, &Droid{Host: host},
+	}
+	if want := len(List()) - 3; len(launchers) != want {
+		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
+			len(launchers), want)
+	}
+	for _, l := range launchers {
+		req := Request{Model: testModel(), APIKey: "sk-or-test", ExtraArgs: []string{"-m", "other/model"}}
+		_, err := l.Command(req)
+		if err == nil {
+			t.Errorf("%s: accepted a conflicting -m", l.Name())
+			continue
+		}
+		if !strings.Contains(err.Error(), "zzz-launch") {
+			t.Errorf("%s: error %q does not name its own host", l.Name(), err)
+		}
+	}
+}
+
+// TestBespokeRefusalsNameTheHost covers the three refusals that do not go
+// through the shared guards and so would not be caught by the table above:
+// codex's conflicting -c override, hermes's subcommand-shaped passthrough,
+// and openclaw's platform-administration passthrough. Each builds its own
+// message, so each can regress to a literal independently.
+func TestBespokeRefusalsNameTheHost(t *testing.T) {
+	host := Host{Name: "zzz-launch", Marker: "zzz"}
+	req := func(extras ...string) Request {
+		return Request{Model: testModel(), APIKey: "sk-or-test", ExtraArgs: extras}
+	}
+	for _, tc := range []struct {
+		what string
+		l    Launcher
+		req  Request
+	}{
+		{"codex -c override", &Codex{Host: host}, req("-c", `model_provider="other"`)},
+		{"hermes subcommand", &Hermes{Host: host}, req("serve")},
+		{"openclaw admin", &OpenClaw{Host: host}, req("gateway")},
+	} {
+		_, err := tc.l.Command(tc.req)
+		if err == nil {
+			t.Errorf("%s: accepted, want refusal", tc.what)
+			continue
+		}
+		if !strings.Contains(err.Error(), "zzz-launch") {
+			t.Errorf("%s: error %q does not name the host", tc.what, err)
+		}
+		if strings.Contains(err.Error(), "openrouter-launch") {
+			t.Errorf("%s: error %q still names a hardcoded host", tc.what, err)
 		}
 	}
 }

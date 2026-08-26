@@ -20,6 +20,10 @@ import (
 // backend. Doc-verified on 0.21.8 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/qwen.md.
 type Qwen struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -80,10 +84,10 @@ func (q *Qwen) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("qwen: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("qwen", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(q.Host, "qwen", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("qwen", req.ExtraArgs, "--auth-type", "--openai-api-key", "--openai-base-url"); err != nil {
+	if err := rejectFlags(q.Host, "qwen", req.ExtraArgs, "--auth-type", "--openai-api-key", "--openai-base-url"); err != nil {
 		return Command{}, err
 	}
 	path, err := q.findPath()

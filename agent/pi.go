@@ -14,6 +14,10 @@ import (
 // Doc-verified on pi 0.84.1 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/pi.md.
 type Pi struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -53,10 +57,10 @@ func (p *Pi) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("pi: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("pi", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(p.Host, "pi", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags("pi", req.ExtraArgs, "--provider"); err != nil {
+	if err := rejectFlags(p.Host, "pi", req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
 	path, err := p.findPath()

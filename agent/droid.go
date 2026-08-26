@@ -10,11 +10,6 @@ import (
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
-// droidMarker owns our entry in droid's settings: displayName is what droid
-// derives selection IDs from, and it is deliberately dash-safe. Apply
-// replaces marker-owned entries and never touches others.
-const droidMarker = "openrouter-launch"
-
 // Droid launches Factory's droid via the ConfigWriter escape hatch — the
 // ONE sanctioned agent-owned write (Landmine 6 as amended). Factory
 // documents OpenRouter BYOK, but the only declaration surface is a
@@ -29,6 +24,10 @@ const droidMarker = "openrouter-launch"
 // pure. Requires a Factory account even for BYOK. Doc-verified on 0.190.0
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/droid.md.
 type Droid struct {
+	// Host identifies this tool in the guidance attached to a rejected
+	// passthrough argument, and — for droid — owns the marker stamped into
+	// the agent's own settings. Required.
+	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 }
@@ -57,7 +56,7 @@ func (d *Droid) Command(req Request) (Command, error) {
 	if req.APIKey == "" {
 		return Command{}, fmt.Errorf("droid: an OpenRouter API key is required")
 	}
-	if err := rejectModelFlag("droid", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(d.Host, "droid", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	path, err := d.lookPath("droid")
@@ -81,7 +80,7 @@ func (d *Droid) Command(req Request) (Command, error) {
 // as the thing to restore, and also evicts our live entry (foreignDroidModels
 // keeps only NON-marker entries, so it drops ours while adding its own). The
 // second restore to run then finds no marker entries left to strip and writes
-// `model` back to a `custom:openrouter-launch-*` name that nothing defines —
+// `model` back to a `custom:<marker>-*` name that nothing defines —
 // leaving the user a dangling reference to clear by hand. Serialising it
 // needs a lock spanning Apply, the run and the restore, which would be a
 // sixth Landmine 6 write site; documented in README "Known caveats" instead,
@@ -98,12 +97,12 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 
 	priorModel, hadModel := settings["model"]
 
-	kept, err := foreignDroidModels(path, settings)
+	kept, err := foreignDroidModels(path, settings, d.Host.Marker)
 	if err != nil {
 		return nil, err
 	}
 	entry := map[string]any{
-		"displayName":     droidMarker,
+		"displayName":     d.Host.Marker,
 		"provider":        "generic-chat-completion-api",
 		"baseUrl":         openrouter.DefaultBaseURL,
 		"model":           req.Model.ID,
@@ -111,7 +110,7 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 		"maxOutputTokens": 64000,
 	}
 	settings["customModels"] = append(kept, entry)
-	settings["model"] = fmt.Sprintf("custom:%s-%d", droidMarker, len(kept))
+	settings["model"] = fmt.Sprintf("custom:%s-%d", d.Host.Marker, len(kept))
 
 	if err := writeDroidSettingsFile(path, settings); err != nil {
 		return nil, err
@@ -122,7 +121,7 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 		if err != nil {
 			return err
 		}
-		kept, err := foreignDroidModels(path, settings)
+		kept, err := foreignDroidModels(path, settings, d.Host.Marker)
 		if err != nil {
 			return err
 		}
@@ -182,7 +181,7 @@ func readDroidSettingsFile(path string) (map[string]any, bool, error) {
 // it as empty and letting Apply replace it (restore then deletes the key) is
 // exactly what happened before this guard existed, and nothing was lost then
 // either.
-func foreignDroidModels(path string, settings map[string]any) ([]any, error) {
+func foreignDroidModels(path string, settings map[string]any, marker string) ([]any, error) {
 	raw, present := settings["customModels"]
 	if !present || raw == nil { // JSON null carries no entries to preserve
 		return nil, nil
@@ -193,7 +192,7 @@ func foreignDroidModels(path string, settings map[string]any) ([]any, error) {
 	}
 	var kept []any
 	for _, item := range models {
-		if entry, ok := item.(map[string]any); ok && entry["displayName"] == droidMarker {
+		if entry, ok := item.(map[string]any); ok && entry["displayName"] == marker {
 			continue
 		}
 		kept = append(kept, item)
