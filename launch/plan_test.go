@@ -469,3 +469,33 @@ func TestPlanCarriesStagedFilesAndAgentRequest(t *testing.T) {
 		t.Errorf("AgentRequest.ExtraArgs = %q", p.AgentRequest.ExtraArgs)
 	}
 }
+
+// TestPlanSuppliesTheStageDirToTheLauncher pins the seam that replaced
+// internal/agent's direct call to config.Dir. The launcher no longer knows
+// where this tool keeps its files; the planner tells it, and tells
+// stageFiles the same thing, so the path a launcher builds and the boundary
+// the write is checked against come from one source.
+func TestPlanSuppliesTheStageDirToTheLauncher(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+
+	want := t.TempDir()
+	svc := &Service{
+		Catalog:  ortest.NewCatalog(),
+		StageDir: func() (string, error) { return want, nil },
+	}
+	// A fake launcher rather than a real spec: Landmine 8 — the isolated run
+	// has no claude on PATH, so a real one would be refused by the install
+	// guard long before the stage dir is set.
+	plan, err := svc.Plan(context.Background(), Request{
+		Spec:    spec("fake", &fakeLauncher{}),
+		ModelID: ortest.Models()[0].ID,
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if plan.AgentRequest.StageDir != want {
+		t.Errorf("AgentRequest.StageDir = %q, want %q", plan.AgentRequest.StageDir, want)
+	}
+}

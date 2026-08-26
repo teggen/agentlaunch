@@ -7,7 +7,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
@@ -25,13 +24,12 @@ import (
 // which is a major version bump by this project's own semver contract, not a
 // refactor. Neither half of the pair is sufficient alone.
 
-func openclawPath(t *testing.T) string {
-	t.Helper()
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatalf("config.Dir: %v", err)
-	}
-	return filepath.Join(dir, "openclaw.json")
+// goldenStageDir is the staging directory the golden request names. Its value
+// does not matter; that openclaw's config path is derived from it does.
+const goldenStageDir = "/tmp/orl-golden-stage"
+
+func openclawPath(*testing.T) string {
+	return filepath.Join(goldenStageDir, "openclaw.json")
 }
 
 func TestOpenRouterLaunchSurfaceIsUnchanged(t *testing.T) {
@@ -40,8 +38,7 @@ func TestOpenRouterLaunchSurfaceIsUnchanged(t *testing.T) {
 	}
 	// Landmine 8: real installs exist on this machine, and findPath has
 	// home-directory fallbacks, so both HOME and PATH have to be ours.
-	home := testHome(t)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	testHome(t)
 	bin := t.TempDir()
 	for _, n := range []string{"claude", "codex", "opencode", "pi", "hermes",
 		"qwen", "cline", "kimi", "omp", "openclaw", "droid"} {
@@ -56,7 +53,8 @@ func TestOpenRouterLaunchSurfaceIsUnchanged(t *testing.T) {
 			ID: "anthropic/claude-opus-4.6", Name: "Anthropic: Claude Opus 4.6",
 			ContextLength: 200000, SupportsTools: true, Provider: "anthropic",
 		},
-		APIKey: "sk-or-test",
+		APIKey:   "sk-or-test",
+		StageDir: goldenStageDir,
 	}
 
 	golden := []struct {

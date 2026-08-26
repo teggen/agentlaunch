@@ -7,8 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/teggen/openrouter-launch/internal/config"
 )
 
 // OpenClaw launches OpenClaw against an OpenRouter model. Interactive
@@ -62,13 +60,14 @@ func openclawModelRef(p Provider, slug string) string {
 	return p.ModelRef(strings.ToLower(slug))
 }
 
-// openclawConfigPath is the launcher-owned staged config location.
-func openclawConfigPath() (string, error) {
-	dir, err := config.Dir()
-	if err != nil {
-		return "", err
+// openclawConfigPath is the launcher-owned staged config location, inside
+// the directory the caller named. An empty StageDir is refused rather than
+// defaulted: see the field's comment on Request.
+func openclawConfigPath(req Request) (string, error) {
+	if req.StageDir == "" {
+		return "", fmt.Errorf("openclaw: no staging directory was supplied for its managed config")
 	}
-	return filepath.Join(dir, "openclaw.json"), nil
+	return filepath.Join(req.StageDir, "openclaw.json"), nil
 }
 
 // openclawOneShot reports whether the passthrough invokes openclaw's
@@ -106,7 +105,7 @@ func (o *OpenClaw) Command(req Request) (Command, error) {
 		}, nil
 	}
 
-	cfgPath, err := openclawConfigPath()
+	cfgPath, err := openclawConfigPath(req)
 	if err != nil {
 		return Command{}, err
 	}
@@ -138,7 +137,7 @@ func (o *OpenClaw) StagedFiles(req Request) ([]StagedFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openclaw: building staged config: %w", err)
 	}
-	path, err := openclawConfigPath()
+	path, err := openclawConfigPath(req)
 	if err != nil {
 		return nil, err
 	}

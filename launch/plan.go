@@ -139,10 +139,16 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		}
 	}
 
+	stageDir, err := s.stageDir()
+	if err != nil {
+		return Plan{Warnings: warnings}, err
+	}
+
 	areq := agent.Request{
 		Model:     model,
 		APIKey:    apiKey,
 		ExtraArgs: req.ExtraArgs,
+		StageDir:  stageDir,
 	}
 	command, err := spec.Launcher.Command(areq)
 	if err != nil {

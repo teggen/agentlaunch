@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
@@ -22,6 +23,19 @@ type Service struct {
 	// RunWait performs the fork-and-wait handoff for ConfigWriter agents.
 	// nil means agent.RunWait.
 	RunWait func(agent.Command) error
+	// StageDir names the directory launcher-owned staged files live in, and
+	// which stageFiles refuses to write outside of. nil means config.Dir,
+	// this tool's own XDG directory. It is one field rather than two so the
+	// value a launcher computes its staged paths against and the value the
+	// boundary check enforces cannot drift apart.
+	StageDir func() (string, error)
+}
+
+func (s *Service) stageDir() (string, error) {
+	if s.StageDir != nil {
+		return s.StageDir()
+	}
+	return config.Dir()
 }
 
 func (s *Service) catalog() openrouter.Catalog {

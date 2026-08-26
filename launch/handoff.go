@@ -33,7 +33,7 @@ func (s *Service) Launch(p Plan, warn func(Warning)) error {
 			Message: "could not save last selection: " + err.Error(),
 		})
 	}
-	if err := stageFiles(p.Staged); err != nil {
+	if err := s.stageFiles(p.Staged); err != nil {
 		return fmt.Errorf("stage launcher-owned config: %w", err)
 	}
 	if cw, ok := p.Spec.Launcher.(agent.ConfigWriter); ok {
@@ -59,11 +59,11 @@ func recordSelection(p Plan) error {
 // stageFiles writes the plan's launcher-owned files. It refuses any path
 // outside this tool's own config dir: staged files are write site #3 of the
 // amended Landmine 6, and the boundary is enforced here, not trusted.
-func stageFiles(files []agent.StagedFile) error {
+func (s *Service) stageFiles(files []agent.StagedFile) error {
 	if len(files) == 0 {
 		return nil
 	}
-	dir, err := config.Dir()
+	dir, err := s.stageDir()
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,15 @@ type Request struct {
 	Model     openrouter.Model
 	APIKey    string
 	ExtraArgs []string
+	// StageDir is the directory launcher-owned files declared by StagedFiles
+	// must live under. It is supplied by the caller and never guessed by a
+	// launcher: the same value is what launch.Service.Launch validates staged
+	// paths against, so the boundary being enforced and the boundary the
+	// launcher computed against cannot drift apart. A launcher that needs it
+	// and is handed an empty value must refuse rather than fall back —
+	// filepath.Join("", "x.json") is a path in the working directory, which
+	// is a write outside the sanctioned dir (Landmine 6).
+	StageDir string
 }
 
 // Command is a process to run. Env entries override any inherited

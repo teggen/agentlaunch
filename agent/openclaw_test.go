@@ -8,14 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stage := t.TempDir()
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
-	req := Request{Model: testModel(), APIKey: "sk-or-test"}
+	req := Request{Model: testModel(), APIKey: "sk-or-test", StageDir: stage}
 
 	cmd, err := o.Command(req)
 	if err != nil {
@@ -32,11 +31,7 @@ func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("StagedFiles returned %d files, want 1", len(files))
 	}
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := filepath.Join(dir, "openclaw.json"); files[0].Path != want {
+	if want := filepath.Join(stage, "openclaw.json"); files[0].Path != want {
 		t.Errorf("staged path = %q, want %q", files[0].Path, want)
 	}
 	// Refs are lowercased and openrouter/-prefixed; map marshaling sorts
@@ -62,11 +57,12 @@ func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 }
 
 func TestOpenClawLowercasesModelRef(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stage := t.TempDir()
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	files, err := o.StagedFiles(Request{
-		Model:  openrouter.Model{ID: "MoonshotAI/Kimi-K2.5"},
-		APIKey: "k",
+		StageDir: stage,
+		Model:    openrouter.Model{ID: "MoonshotAI/Kimi-K2.5"},
+		APIKey:   "k",
 	})
 	if err != nil {
 		t.Fatalf("StagedFiles: %v", err)
@@ -77,9 +73,10 @@ func TestOpenClawLowercasesModelRef(t *testing.T) {
 }
 
 func TestOpenClawOneShotSkipsStagingAndInjectsModel(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stage := t.TempDir()
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	req := Request{
+		StageDir:  stage,
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
 		ExtraArgs: []string{"agent", "exec", "say OK"},
@@ -107,22 +104,22 @@ func TestOpenClawOneShotSkipsStagingAndInjectsModel(t *testing.T) {
 }
 
 func TestOpenClawCommandRejectsConflictsAndOtherSubcommands(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stage := t.TempDir()
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	for _, extras := range [][]string{
 		{"--model", "x"}, {"--model=x"}, {"-m", "x"},
 		{"gateway", "run"}, {"daemon", "start"}, {"onboard"},
 	} {
-		if _, err := o.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: extras}); err == nil {
+		if _, err := o.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: extras, StageDir: stage}); err == nil {
 			t.Errorf("extras %q accepted, want error", extras)
 		}
 	}
 }
 
 func TestOpenClawRequiresAPIKeyAndBinary(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stage := t.TempDir()
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
-	if _, err := o.Command(Request{Model: testModel()}); err == nil {
+	if _, err := o.Command(Request{Model: testModel(), StageDir: stage}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 	missing := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) { return "", errors.New("no") }}
@@ -166,5 +163,21 @@ func TestOpenClawShadowedCredential(t *testing.T) {
 	}
 	if msg := o.ShadowedCredential(); !strings.Contains(msg, "auth profile") {
 		t.Errorf("openrouter profile: msg = %q, want an auth-profile warning", msg)
+	}
+}
+
+// TestOpenClawRefusesAnEmptyStageDir: a missing staging directory must be an
+// error, never a default. filepath.Join("", "openclaw.json") is a relative
+// path, so falling back would write into whatever directory the user happened
+// to run from — a write outside the five sanctioned sites (Landmine 6),
+// reached by omission rather than by intent.
+func TestOpenClawRefusesAnEmptyStageDir(t *testing.T) {
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	req := Request{Model: testModel(), APIKey: "sk-or-test"} // no StageDir
+	if _, err := o.Command(req); err == nil {
+		t.Error("Command accepted a request with no staging directory")
+	}
+	if _, err := o.StagedFiles(req); err == nil {
+		t.Error("StagedFiles accepted a request with no staging directory")
 	}
 }
