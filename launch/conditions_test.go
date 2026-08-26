@@ -110,9 +110,22 @@ func TestCheckSupportedAcceptsSupportedAgent(t *testing.T) {
 	}
 }
 
+// openRouterRegistry is the registry this tool actually ships. The guard
+// below is a claim about every entry in it, so a synthetic binding would not
+// do: the point is that no SHIPPED unsupported agent slips past CheckSupported.
+func openRouterRegistry(t *testing.T) *agent.Registry {
+	t.Helper()
+	reg, err := agent.NewRegistry(
+		agent.Binding{Provider: agent.OpenRouter, Host: agent.OpenRouterHost}, agent.Builtins())
+	if err != nil {
+		t.Fatalf("agent.NewRegistry: %v", err)
+	}
+	return reg
+}
+
 func TestCheckSupportedCoversEveryUnsupportedRegistryEntry(t *testing.T) {
 	sawUnsupported := false
-	for _, spec := range agent.List() {
+	for _, spec := range openRouterRegistry(t).List() {
 		if spec.Status.Supported {
 			if err := CheckSupported(spec); err != nil {
 				t.Errorf("%q: CheckSupported = %v, want nil", spec.Name, err)

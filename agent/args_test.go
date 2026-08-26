@@ -144,7 +144,7 @@ func TestEveryLauncherPassesItsOwnHostToTheArgGuards(t *testing.T) {
 		&OMP{Provider: p, Host: host}, &OpenClaw{Provider: p, Host: host},
 		&Droid{Provider: p, Host: host},
 	}
-	if want := len(List()) - 3; len(launchers) != want {
+	if want := len(openRouterRegistry(t).List()) - 3; len(launchers) != want {
 		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
 			len(launchers), want)
 	}

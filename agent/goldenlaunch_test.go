@@ -159,13 +159,14 @@ func TestOpenRouterLaunchSurfaceIsUnchanged(t *testing.T) {
 			},
 		}}
 
-	if want := len(golden); want != len(List())-3 {
+	reg := openRouterRegistry(t)
+	if want := len(golden); want != len(reg.List())-3 {
 		t.Fatalf("golden covers %d launchers, registry has %d supported entries",
-			want, len(List())-3)
+			want, len(reg.List())-3)
 	}
 
 	for _, g := range golden {
-		spec, err := Lookup(g.name)
+		spec, err := reg.Lookup(g.name)
 		if err != nil {
 			t.Errorf("%s: %v", g.name, err)
 			continue
