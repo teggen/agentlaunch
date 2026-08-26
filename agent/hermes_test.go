@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 func TestHermesCommandPathArgsEnv(t *testing.T) {
@@ -61,7 +61,7 @@ func TestHermesCommandRejectsConflictingExtras(t *testing.T) {
 
 func TestHermesCheckModelContextFloor(t *testing.T) {
 	h := &Hermes{Provider: testProvider(), Host: testHost()}
-	small := openrouter.Model{ID: "small/model", ContextLength: 32768}
+	small := catalog.Model{ID: "small/model", ContextLength: 32768}
 	err := h.CheckModel(small)
 	if !errors.Is(err, ErrIncompatibleModel) {
 		t.Fatalf("32K context: err = %v, want ErrIncompatibleModel (advisory)", err)
@@ -69,12 +69,12 @@ func TestHermesCheckModelContextFloor(t *testing.T) {
 	if !strings.Contains(err.Error(), "small/model") {
 		t.Errorf("error %q does not name the model", err)
 	}
-	if err := h.CheckModel(openrouter.Model{ID: "big/model", ContextLength: 65536}); err != nil {
+	if err := h.CheckModel(catalog.Model{ID: "big/model", ContextLength: 65536}); err != nil {
 		t.Errorf("64K context rejected: %v", err)
 	}
 	// Unknown context (0) stays silent: missing catalog data is not evidence
 	// of incompatibility.
-	if err := h.CheckModel(openrouter.Model{ID: "unknown/model"}); err != nil {
+	if err := h.CheckModel(catalog.Model{ID: "unknown/model"}); err != nil {
 		t.Errorf("unknown context rejected: %v", err)
 	}
 	// Live-verified 2026-08-09: hermes's own startup message reads "below
@@ -84,13 +84,13 @@ func TestHermesCheckModelContextFloor(t *testing.T) {
 	// passed hermes's own context gate and failed later for an unrelated
 	// reason (no tool-use endpoints) — proving hermes's real floor sits
 	// below 65,536. These three cases pin the true boundary at 64,000.
-	if err := h.CheckModel(openrouter.Model{ID: "boundary/model", ContextLength: 65000}); err != nil {
+	if err := h.CheckModel(catalog.Model{ID: "boundary/model", ContextLength: 65000}); err != nil {
 		t.Errorf("65,000 context (above hermes's real 64,000 floor) rejected: %v", err)
 	}
-	if err := h.CheckModel(openrouter.Model{ID: "floor/model", ContextLength: 64000}); err != nil {
+	if err := h.CheckModel(catalog.Model{ID: "floor/model", ContextLength: 64000}); err != nil {
 		t.Errorf("exactly 64,000 context rejected: %v", err)
 	}
-	if err := h.CheckModel(openrouter.Model{ID: "under-floor/model", ContextLength: 63999}); !errors.Is(err, ErrIncompatibleModel) {
+	if err := h.CheckModel(catalog.Model{ID: "under-floor/model", ContextLength: 63999}); !errors.Is(err, ErrIncompatibleModel) {
 		t.Errorf("63,999 context: err = %v, want ErrIncompatibleModel", err)
 	}
 }

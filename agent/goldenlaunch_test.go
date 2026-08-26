@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 // This file is the other half of the provider parameterization. Every other
@@ -49,7 +49,7 @@ func TestOpenRouterLaunchSurfaceIsUnchanged(t *testing.T) {
 	t.Setenv("PATH", bin)
 
 	req := Request{
-		Model: openrouter.Model{
+		Model: catalog.Model{
 			ID: "anthropic/claude-opus-4.6", Name: "Anthropic: Claude Opus 4.6",
 			ContextLength: 200000, SupportsTools: true, Provider: "anthropic",
 		},

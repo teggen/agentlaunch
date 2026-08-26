@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
@@ -17,7 +18,7 @@ import (
 // mutating process state.
 type Service struct {
 	// Catalog is the model source. nil means the live OpenRouter client.
-	Catalog openrouter.Catalog
+	Catalog catalog.Catalog
 	// Run performs the process handoff. nil means agent.Run.
 	Run func(agent.Command) error
 	// RunWait performs the fork-and-wait handoff for ConfigWriter agents.
@@ -38,7 +39,7 @@ func (s *Service) stageDir() (string, error) {
 	return config.Dir()
 }
 
-func (s *Service) catalog() openrouter.Catalog {
+func (s *Service) catalog() catalog.Catalog {
 	if s.Catalog != nil {
 		return s.Catalog
 	}
@@ -62,10 +63,10 @@ func (s *Service) runWait(c agent.Command) error {
 // Snapshot returns the model catalog with its provenance. Staleness is
 // reported on the Snapshot itself rather than written anywhere; callers turn
 // it into a Warning with StaleWarning.
-func (s *Service) Snapshot(ctx context.Context, refresh bool) (openrouter.Snapshot, error) {
+func (s *Service) Snapshot(ctx context.Context, refresh bool) (catalog.Snapshot, error) {
 	path, err := openrouter.CachePath()
 	if err != nil {
-		return openrouter.Snapshot{}, err
+		return catalog.Snapshot{}, err
 	}
 
 	cache := &openrouter.Cache{
@@ -75,7 +76,7 @@ func (s *Service) Snapshot(ctx context.Context, refresh bool) (openrouter.Snapsh
 	}
 	snap, err := cache.Load(ctx, refresh)
 	if err != nil {
-		return openrouter.Snapshot{}, fmt.Errorf("load model catalog: %w", err)
+		return catalog.Snapshot{}, fmt.Errorf("load model catalog: %w", err)
 	}
 	return snap, nil
 }

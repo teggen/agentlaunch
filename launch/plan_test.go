@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/openrouter-launch/internal/catalog/catalogtest"
 	"github.com/teggen/openrouter-launch/internal/config"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
-	"github.com/teggen/openrouter-launch/internal/openrouter/ortest"
 )
 
 // fakeLauncher implements only the required Launcher interface. The types
@@ -50,7 +51,7 @@ func (*blockedLauncher) InstallHint() string  { return "brew install fake" }
 // incompatibleLauncher returns an advisory ErrIncompatibleModel.
 type incompatibleLauncher struct{ fakeLauncher }
 
-func (*incompatibleLauncher) CheckModel(m openrouter.Model) error {
+func (*incompatibleLauncher) CheckModel(m catalog.Model) error {
 	return fmt.Errorf("%w: fake is optimized for anthropic/* models and may fail with %s",
 		agent.ErrIncompatibleModel, m.ID)
 }
@@ -58,7 +59,7 @@ func (*incompatibleLauncher) CheckModel(m openrouter.Model) error {
 // brokenCheckLauncher returns a genuine failure rather than an advisory one.
 type brokenCheckLauncher struct{ fakeLauncher }
 
-func (*brokenCheckLauncher) CheckModel(openrouter.Model) error {
+func (*brokenCheckLauncher) CheckModel(catalog.Model) error {
 	return errors.New("catalog service unreachable")
 }
 
@@ -83,7 +84,7 @@ func newTestService(t *testing.T) *Service {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
 	return &Service{
-		Catalog: ortest.NewCatalog(),
+		Catalog: catalogtest.NewCatalog(),
 		Run:     func(agent.Command) error { return nil },
 	}
 }
@@ -482,7 +483,7 @@ func TestPlanSuppliesTheStageDirToTheLauncher(t *testing.T) {
 
 	want := t.TempDir()
 	svc := &Service{
-		Catalog:  ortest.NewCatalog(),
+		Catalog:  catalogtest.NewCatalog(),
 		StageDir: func() (string, error) { return want, nil },
 	}
 	// A fake launcher rather than a real spec: Landmine 8 — the isolated run
@@ -490,7 +491,7 @@ func TestPlanSuppliesTheStageDirToTheLauncher(t *testing.T) {
 	// guard long before the stage dir is set.
 	plan, err := svc.Plan(context.Background(), Request{
 		Spec:    spec("fake", &fakeLauncher{}),
-		ModelID: ortest.Models()[0].ID,
+		ModelID: catalogtest.Models()[0].ID,
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)

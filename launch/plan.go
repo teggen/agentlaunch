@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 	"github.com/teggen/openrouter-launch/internal/config"
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // Request is a launch request.
@@ -25,7 +25,7 @@ type Request struct {
 // caller must render and, where Warning.Question is set, get approved.
 type Plan struct {
 	Spec    *agent.Spec
-	Model   openrouter.Model
+	Model   catalog.Model
 	Command agent.Command
 	// AgentRequest is the request Command was built from. The fork-and-wait
 	// path re-uses it for ConfigWriter.Apply, which cannot run at plan time
@@ -96,11 +96,11 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		warnings = append(warnings, w)
 	}
 
-	model, ok := openrouter.FindByID(snap.Models, req.ModelID)
+	model, ok := catalog.FindByID(snap.Models, req.ModelID)
 	if !ok {
 		return Plan{Warnings: warnings}, &UnknownModelError{
 			ModelID:     req.ModelID,
-			Suggestions: openrouter.Suggest(snap.Models, req.ModelID, 5),
+			Suggestions: catalog.Suggest(snap.Models, req.ModelID, 5),
 		}
 	}
 

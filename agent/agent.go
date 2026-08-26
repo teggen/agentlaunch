@@ -6,7 +6,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 // ErrIncompatibleModel reports a pairing an agent does not fully support.
@@ -15,7 +15,7 @@ var ErrIncompatibleModel = errors.New("model may not be fully compatible with th
 
 // Request is everything a launcher needs to build its command.
 type Request struct {
-	Model     openrouter.Model
+	Model     catalog.Model
 	APIKey    string
 	ExtraArgs []string
 	// StageDir is the directory launcher-owned files declared by StagedFiles
@@ -61,7 +61,7 @@ type Installer interface {
 // Returning an error wrapping ErrIncompatibleModel produces a confirmation
 // prompt, not a hard failure.
 type Compatible interface {
-	CheckModel(openrouter.Model) error
+	CheckModel(catalog.Model) error
 }
 
 // PlatformSupported reports whether the agent can run on this platform.

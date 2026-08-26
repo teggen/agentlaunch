@@ -11,15 +11,15 @@ import (
 	"testing"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 	"github.com/teggen/openrouter-launch/internal/config"
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // testPlan is a minimal already-resolved Plan.
 func testPlan() Plan {
 	return Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
-		Model:   openrouter.Model{ID: "anthropic/claude-opus-4.6"},
+		Model:   catalog.Model{ID: "anthropic/claude-opus-4.6"},
 		Command: agent.Command{Path: "/bin/fake", Args: []string{"--model", "x"}, Env: []string{"K=V"}},
 	}
 }

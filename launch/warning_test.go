@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 func TestStaleWarningFreshSnapshotProducesNothing(t *testing.T) {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	snap := openrouter.Snapshot{FetchedAt: now.Add(-time.Hour)}
+	snap := catalog.Snapshot{FetchedAt: now.Add(-time.Hour)}
 
 	if _, ok := StaleWarning(snap, now); ok {
 		t.Error("a fresh snapshot should produce no warning")
@@ -20,7 +20,7 @@ func TestStaleWarningFreshSnapshotProducesNothing(t *testing.T) {
 
 func TestStaleWarningReportsAgeAndCause(t *testing.T) {
 	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	snap := openrouter.Snapshot{
+	snap := catalog.Snapshot{
 		FetchedAt: now.Add(-90 * time.Minute),
 		Stale:     true,
 		StaleErr:  errors.New("network down"),

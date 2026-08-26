@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 // Claude launches Claude Code against a model on the bound provider.
@@ -146,7 +146,7 @@ func (c *Claude) InstallHint() string {
 // vendor is not evidence of incompatibility. Warning there would fire on
 // every model the catalog offers, which is the same "advisory that is always
 // on" that hermes's context floor avoids by ignoring an unknown length.
-func (c *Claude) CheckModel(m openrouter.Model) error {
+func (c *Claude) CheckModel(m catalog.Model) error {
 	if m.Provider == "" || strings.EqualFold(m.Provider, "anthropic") {
 		return nil
 	}

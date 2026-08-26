@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
-func kimiModel() openrouter.Model {
-	return openrouter.Model{ID: "moonshotai/kimi-k2.5", ContextLength: 262144}
+func kimiModel() catalog.Model {
+	return catalog.Model{ID: "moonshotai/kimi-k2.5", ContextLength: 262144}
 }
 
 func TestKimiCommandPathArgsEnv(t *testing.T) {
@@ -47,7 +47,7 @@ func TestKimiCommandPathArgsEnv(t *testing.T) {
 func TestKimiCommandOmitsContextSizeWhenUnknown(t *testing.T) {
 	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 	cmd, err := k.Command(Request{
-		Model:  openrouter.Model{ID: "moonshotai/kimi-k2.5"}, // ContextLength 0
+		Model:  catalog.Model{ID: "moonshotai/kimi-k2.5"}, // ContextLength 0
 		APIKey: "sk-or-test",
 	})
 	if err != nil {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 // WarningKind identifies an advisory condition so a caller can render it in
@@ -44,7 +44,7 @@ type Warning struct {
 // StaleWarning returns the warning for a snapshot served from a failed
 // refresh, and false when the snapshot is fresh. now is a parameter so this
 // stays pure and testable.
-func StaleWarning(snap openrouter.Snapshot, now time.Time) (Warning, bool) {
+func StaleWarning(snap catalog.Snapshot, now time.Time) (Warning, bool) {
 	if !snap.Stale {
 		return Warning{}, false
 	}

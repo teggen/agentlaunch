@@ -13,8 +13,13 @@ import (
 // XDG directory, its provider's endpoints — now arrives as data, on a
 // Provider, a Host, or the Request.
 //
-// One in-repo import remains, for the Model type, and it is the next thing to
-// go. Adding a second is the regression this test exists to catch: a new
+// One in-repo import remains, internal/catalog, for the Model type — and it
+// is now the RIGHT one: catalog is provider-neutral and moves into the same
+// module as this package, so the edge survives the extraction rather than
+// having to be cut. Until A7 this pointed at internal/openrouter, which did
+// not.
+//
+// Adding a second import is the regression this test exists to catch: a new
 // launcher reaching for internal/config to find "our" directory, say, would
 // compile and pass every other test in the package.
 //
@@ -23,7 +28,7 @@ import (
 // this repo, and `make lint-cross` covers the other platforms.
 func TestAgentDependsOnNothingButTheCatalog(t *testing.T) {
 	const self = "github.com/teggen/openrouter-launch/"
-	allowed := map[string]bool{self + "internal/openrouter": true}
+	allowed := map[string]bool{self + "internal/catalog": true}
 
 	pkg, err := build.ImportDir(".", 0)
 	if err != nil {

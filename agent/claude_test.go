@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 func stubLookPath(path string) func(string) (string, error) {
 	return func(string) (string, error) { return path, nil }
 }
 
-func testModel() openrouter.Model {
-	return openrouter.Model{
+func testModel() catalog.Model {
+	return catalog.Model{
 		ID:            "anthropic/claude-opus-4.6",
 		Name:          "Anthropic: Claude Opus 4.6",
 		Provider:      "anthropic",
@@ -154,7 +154,7 @@ func TestClaudeCheckModelAcceptsAnthropic(t *testing.T) {
 
 func TestClaudeCheckModelWarnsOnOtherProviders(t *testing.T) {
 	c := &Claude{Provider: testProvider(), Host: testHost()}
-	m := openrouter.Model{ID: "qwen/qwen3-coder", Provider: "qwen"}
+	m := catalog.Model{ID: "qwen/qwen3-coder", Provider: "qwen"}
 	err := c.CheckModel(m)
 	if !errors.Is(err, ErrIncompatibleModel) {
 		t.Errorf("got %v, want an error wrapping ErrIncompatibleModel", err)
@@ -262,12 +262,12 @@ func TestClaudeRefusesAProviderWithNoAnthropicSurface(t *testing.T) {
 // advisory fire on every model it offers.
 func TestClaudeCheckModelIgnoresAnAbsentVendorNamespace(t *testing.T) {
 	c := &Claude{Provider: testProvider(), Host: testHost()}
-	if err := c.CheckModel(openrouter.Model{ID: "qwen3-coder:30b"}); err != nil {
+	if err := c.CheckModel(catalog.Model{ID: "qwen3-coder:30b"}); err != nil {
 		t.Errorf("CheckModel on a model with no vendor namespace = %v, want nil", err)
 	}
 	// A KNOWN non-Anthropic vendor still warns; the exemption is for absence,
 	// not for everything.
-	if err := c.CheckModel(openrouter.Model{ID: "qwen/q3", Provider: "qwen"}); err == nil {
+	if err := c.CheckModel(catalog.Model{ID: "qwen/q3", Provider: "qwen"}); err == nil {
 		t.Error("CheckModel on a known non-anthropic vendor = nil, want an advisory")
 	}
 }

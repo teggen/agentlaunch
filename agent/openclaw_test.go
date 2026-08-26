@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
@@ -61,7 +61,7 @@ func TestOpenClawLowercasesModelRef(t *testing.T) {
 	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	files, err := o.StagedFiles(Request{
 		StageDir: stage,
-		Model:    openrouter.Model{ID: "MoonshotAI/Kimi-K2.5"},
+		Model:    catalog.Model{ID: "MoonshotAI/Kimi-K2.5"},
 		APIKey:   "k",
 	})
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/openrouter"
+	"github.com/teggen/openrouter-launch/internal/catalog"
 )
 
 // hermesMinContext is the context floor hermes enforces at startup: models
@@ -115,7 +115,7 @@ func (h *Hermes) Command(req Request) (Command, error) {
 // CheckModel warns (advisory, Landmine 7) for models under hermes's context
 // floor. Unknown context stays silent: missing catalog data is not evidence
 // of incompatibility.
-func (h *Hermes) CheckModel(m openrouter.Model) error {
+func (h *Hermes) CheckModel(m catalog.Model) error {
 	if m.ContextLength > 0 && m.ContextLength < hermesMinContext {
 		return fmt.Errorf("hermes refuses models with less than a 64,000-token context window at startup (%s has %d tokens): %w",
 			m.ID, m.ContextLength, ErrIncompatibleModel)

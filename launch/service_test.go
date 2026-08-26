@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/openrouter-launch/internal/catalog/catalogtest"
 	"github.com/teggen/openrouter-launch/internal/openrouter"
-	"github.com/teggen/openrouter-launch/internal/openrouter/ortest"
 )
 
 // erroringCatalog always fails, forcing Snapshot down the stale-cache
 // fallback path.
 type erroringCatalog struct{}
 
-func (erroringCatalog) Models(context.Context) ([]openrouter.Model, error) {
+func (erroringCatalog) Models(context.Context) ([]catalog.Model, error) {
 	return nil, errors.New("network down")
 }
 
@@ -31,9 +32,10 @@ func writeCacheFileForTest(t *testing.T, path string, fetchedAt time.Time) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	data, err := json.Marshal(struct {
-		FetchedAt time.Time          `json:"fetched_at"`
-		Models    []openrouter.Model `json:"models"`
-	}{FetchedAt: fetchedAt, Models: ortest.Models()})
+		Schema    int             `json:"schema"`
+		FetchedAt time.Time       `json:"fetched_at"`
+		Models    []catalog.Model `json:"models"`
+	}{Schema: openrouter.CacheSchema, FetchedAt: fetchedAt, Models: catalogtest.Models()})
 	if err != nil {
 		t.Fatalf("marshal cache file: %v", err)
 	}
