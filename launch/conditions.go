@@ -19,15 +19,23 @@ import (
 // no business knowing. Phase 2 turns this branch into "open the picker".
 var ErrNoModel = errors.New("no model selected")
 
-// UnsupportedAgentError reports an agent that cannot be pointed at
-// OpenRouter at all.
+// UnsupportedAgentError reports an agent that cannot be pointed at the bound
+// provider at all.
 type UnsupportedAgentError struct {
-	Agent  string
-	Reason string
+	Agent string
+	// Provider is the bound provider's display name. Empty is legitimate —
+	// a Spec built without a Binding has none — and Error() then says "this
+	// provider" rather than leaving a blank where a name belongs.
+	Provider string
+	Reason   string
 }
 
 func (e *UnsupportedAgentError) Error() string {
-	return fmt.Sprintf("%s cannot be pointed at OpenRouter: %s", e.Agent, e.Reason)
+	provider := e.Provider
+	if provider == "" {
+		provider = "this provider"
+	}
+	return fmt.Sprintf("%s cannot be pointed at %s: %s", e.Agent, provider, e.Reason)
 }
 
 // UnsupportedPlatformError reports an agent that cannot run on this
@@ -71,12 +79,17 @@ func (e *UnknownModelError) Error() string {
 		e.ModelID, strings.Join(e.Suggestions, "\n  "))
 }
 
-// CheckSupported reports why an agent cannot be pointed at OpenRouter. It is
+// CheckSupported reports why an agent cannot be pointed at the bound
+// provider. It is
 // Plan's first guard, and `profile add` calls it directly to refuse saving a
 // profile for an unsupported agent without planning a launch.
 func CheckSupported(spec *agent.Spec) error {
 	if !spec.Status.Supported {
-		return &UnsupportedAgentError{Agent: spec.Name, Reason: spec.Status.Reason}
+		return &UnsupportedAgentError{
+			Agent:    spec.Name,
+			Provider: spec.Provider,
+			Reason:   spec.Status.Reason,
+		}
 	}
 	return nil
 }

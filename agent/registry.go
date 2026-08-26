@@ -29,6 +29,18 @@ type Spec struct {
 	Launcher    Launcher
 	Description string
 	Status      Status
+	// Provider is the bound provider's DisplayName, carried on the Spec
+	// because the planner's CheckSupported has nothing else to read it from:
+	// it takes a *Spec, and the refusal it produces has to name the provider
+	// the agent could not be pointed at. Hardcoding a vendor there is what
+	// this field replaced, and a second tool's refusal named the wrong
+	// company until it existed.
+	//
+	// Empty is legitimate — NewRegistryFromSpecs builds Specs with no Binding
+	// at all, for consumers' tests over adversarial entries — and
+	// UnsupportedAgentError renders that case without a name rather than with
+	// a blank one.
+	Provider string
 }
 
 // Registry is a set of agents bound to one provider. It is a value rather
@@ -78,6 +90,7 @@ func (d Definition) resolve(b Binding, i int) (*Spec, error) {
 		Name:        d.Name,
 		Aliases:     d.Aliases,
 		Description: d.Description,
+		Provider:    b.Provider.DisplayName,
 	}
 
 	launcher, err := d.New(b)

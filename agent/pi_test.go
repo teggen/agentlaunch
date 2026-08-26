@@ -104,14 +104,24 @@ func TestPiShadowedCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	if msg := p.ShadowedCredential(); msg != "" {
-		t.Errorf("auth.json without openrouter: msg = %q, want empty", msg)
+		t.Errorf("auth.json without an entry for the bound provider: msg = %q, want empty", msg)
 	}
 
 	if err := os.WriteFile(authPath, []byte(`{"`+testProvider().ID+`":{"type":"api_key"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if msg := p.ShadowedCredential(); !strings.Contains(msg, "auth.json") {
-		t.Errorf("stored openrouter credential: msg = %q, want it to name auth.json", msg)
+	// Naming auth.json is not enough on its own: this message hardcoded a
+	// vendor name while looking the provider up correctly, so the file half
+	// of the assertion passed throughout. The PROVIDER half is what catches
+	// that — pi is the only one of the four shadow checks that had it wrong,
+	// and hermes right beside it always used Provider.DisplayName.
+	msg := p.ShadowedCredential()
+	if !strings.Contains(msg, "auth.json") {
+		t.Errorf("stored credential: msg = %q, want it to name auth.json", msg)
+	}
+	if !strings.Contains(msg, testProvider().DisplayName) {
+		t.Errorf("stored credential: msg = %q, want it to name the bound provider %q",
+			msg, testProvider().DisplayName)
 	}
 
 	if err := os.WriteFile(authPath, []byte(`{not json`), 0o600); err != nil {

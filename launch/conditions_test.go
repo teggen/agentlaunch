@@ -2,6 +2,7 @@ package launch
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/teggen/agentlaunch/agent"
@@ -11,11 +12,58 @@ import (
 // asserted exactly, not by substring, because cobra prints them to the user
 // and this refactor promises byte-identical output.
 
+// TestUnsupportedAgentErrorMessage covers both halves of the message, and the
+// named-provider case uses a provider that is deliberately not the one this
+// package was extracted from: the string here was a hardcoded "OpenRouter"
+// until a second consumer was written against the module and its refusals
+// named the wrong company. A fixture that said "OpenRouter" would be
+// satisfied by that literal coming back.
 func TestUnsupportedAgentErrorMessage(t *testing.T) {
-	err := &UnsupportedAgentError{Agent: "copilot", Reason: "talks to GitHub's own backend"}
-	want := "copilot cannot be pointed at OpenRouter: talks to GitHub's own backend"
+	err := &UnsupportedAgentError{
+		Agent:    "copilot",
+		Provider: "Acme",
+		Reason:   "talks to GitHub's own backend",
+	}
+	want := "copilot cannot be pointed at Acme: talks to GitHub's own backend"
 	if got := err.Error(); got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}
+
+// A Spec built with no Binding — which NewRegistryFromSpecs allows, for
+// consumers' tests over adversarial entries — has no provider name. The
+// message must still read as a sentence rather than leaving a blank where a
+// name belongs.
+func TestUnsupportedAgentErrorMessageWithoutAProviderName(t *testing.T) {
+	err := &UnsupportedAgentError{Agent: "copilot", Reason: "talks to GitHub's own backend"}
+	want := "copilot cannot be pointed at this provider: talks to GitHub's own backend"
+	if got := err.Error(); got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}
+
+// TestCheckSupportedCarriesTheBoundProviderName is the wiring half: Error()
+// can format a provider correctly while CheckSupported never supplies one,
+// and every refusal a user sees comes through CheckSupported.
+func TestCheckSupportedCarriesTheBoundProviderName(t *testing.T) {
+	spec, err := builtinRegistry(t).Lookup("chatgpt")
+	if err != nil {
+		t.Fatalf("Lookup(chatgpt): %v", err)
+	}
+	unsupported := CheckSupported(spec)
+	if unsupported == nil {
+		t.Fatal("CheckSupported accepted a desktop app")
+	}
+	var e *UnsupportedAgentError
+	if !errors.As(unsupported, &e) {
+		t.Fatalf("CheckSupported returned %T, want *UnsupportedAgentError", unsupported)
+	}
+	if e.Provider != testProvider().DisplayName {
+		t.Errorf("Provider = %q, want the bound provider's %q",
+			e.Provider, testProvider().DisplayName)
+	}
+	if !strings.Contains(unsupported.Error(), testProvider().DisplayName) {
+		t.Errorf("message %q does not name the bound provider", unsupported.Error())
 	}
 }
 

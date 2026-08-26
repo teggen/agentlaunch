@@ -110,5 +110,6 @@ func (p *Pi) ShadowedCredential() string {
 	if _, ok := store[p.Provider.ID]; !ok {
 		return ""
 	}
-	return "pi has a stored OpenRouter credential (~/.pi/agent/auth.json) that outranks the key this launch provides"
+	return "pi has a stored " + p.Provider.DisplayName +
+		" credential (~/.pi/agent/auth.json) that outranks the key this launch provides"
 }
