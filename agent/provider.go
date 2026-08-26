@@ -147,7 +147,34 @@ func (p Provider) Credential(agentName, userKey string) (string, error) {
 	if userKey == "" {
 		return "", fmt.Errorf("%s: an %s API key is required", agentName, p.DisplayName)
 	}
+	// A control character here is fatal at exec time, not here: os/exec
+	// refuses an entire environment containing a NUL (dedupEnv, Go #56284),
+	// and \r or \n would instead travel silently into an Authorization
+	// header. Either way the credential is the only user-controlled value a
+	// launcher puts in the environment unescaped, so this is the one place
+	// that can catch it.
+	//
+	// Catching it HERE matters beyond the message. Command is pure and runs
+	// before the planner records a selection or stages a file, so a refusal
+	// at this point costs the user nothing; the same key reaching exec fails
+	// after those side effects have happened.
+	//
+	// The key is never echoed — it is a secret, and one whose defect is
+	// invisible anyway. The byte and its offset are what a user needs.
+	if i := strings.IndexFunc(userKey, isEnvControlChar); i >= 0 {
+		return "", fmt.Errorf("%s: the %s API key contains a control character (%#02x at byte %d); "+
+			"an agent's environment cannot carry one. Re-enter the key — a value pasted into a "+
+			"terminal or stored by an editor can pick up bytes that stay invisible in a config file",
+			agentName, p.DisplayName, userKey[i], i)
+	}
 	return userKey, nil
+}
+
+// isEnvControlChar reports whether r is a control character, which no
+// environment value may contain. C0 (below 0x20) covers NUL, tab, carriage
+// return and newline; 0x7f is DEL.
+func isEnvControlChar(r rune) bool {
+	return r < 0x20 || r == 0x7f
 }
 
 // EnvEntry returns the "NAME=value" entry carrying the credential.
