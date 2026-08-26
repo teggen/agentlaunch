@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
-
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // Qwen launches Qwen Code against an OpenRouter model through its generic
@@ -20,6 +18,9 @@ import (
 // backend. Doc-verified on 0.21.8 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/qwen.md.
 type Qwen struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -77,12 +78,17 @@ func (q *Qwen) findPath() (string, error) {
 }
 
 // Command builds the qwen invocation. Pure: nothing written, nothing
-// spawned. Both OPENAI_API_KEY and OPENROUTER_API_KEY carry the key: the
+// spawned. Both OPENAI_API_KEY and the provider's own key variable carry it: the
 // generic openai auth path reads the former, qwen-code's dedicated
 // OpenRouter recipe documents the latter.
 func (q *Qwen) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("qwen: an OpenRouter API key is required")
+	if q.Provider.BaseURL == "" {
+		return Command{}, fmt.Errorf("qwen: %s exposes no OpenAI-compatible endpoint",
+			q.Provider.DisplayName)
+	}
+	key, err := q.Provider.Credential("qwen", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(q.Host, "qwen", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -97,9 +103,9 @@ func (q *Qwen) Command(req Request) (Command, error) {
 	args := []string{"--auth-type", "openai", "--model", req.Model.ID}
 	args = append(args, req.ExtraArgs...)
 	env := []string{
-		"OPENAI_BASE_URL=" + openrouter.DefaultBaseURL,
-		"OPENAI_API_KEY=" + req.APIKey,
-		"OPENROUTER_API_KEY=" + req.APIKey,
+		"OPENAI_BASE_URL=" + q.Provider.BaseURL,
+		"OPENAI_API_KEY=" + key,
+		q.Provider.EnvEntry(key),
 		"OPENAI_MODEL=" + req.Model.ID,
 	}
 	return Command{Path: path, Args: args, Env: env}, nil

@@ -43,6 +43,9 @@ import (
 // no working alternative — and it makes cline persist the key into its own
 // provider store, which is what Apply exists to undo.
 type Cline struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -67,8 +70,9 @@ func (c *Cline) lookPath(file string) (string, error) {
 // well, for the cold-start case where our client is what spawns the hub
 // daemon and the daemon inherits our environment instead of a stray export.
 func (c *Cline) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("cline: an OpenRouter API key is required")
+	key, err := c.Provider.Credential("cline", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(c.Host, "cline", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -80,9 +84,9 @@ func (c *Cline) Command(req Request) (Command, error) {
 	if err != nil {
 		return Command{}, fmt.Errorf("cline binary not found: %w", err)
 	}
-	args := []string{"-P", "openrouter", "-m", req.Model.ID, "-k", req.APIKey}
+	args := []string{"-P", c.Provider.ID, "-m", req.Model.ID, "-k", key}
 	args = append(args, req.ExtraArgs...)
-	env := []string{"OPENROUTER_API_KEY=" + req.APIKey}
+	env := []string{c.Provider.EnvEntry(key)}
 	return Command{Path: path, Args: args, Env: env}, nil
 }
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestClineCommandPathArgsEnv(t *testing.T) {
-	c := &Cline{LookPath: stubLookPath("/usr/local/bin/cline")}
+	c := &Cline{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/cline")}
 	cmd, err := c.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -19,7 +19,7 @@ func TestClineCommandPathArgsEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Command: %v", err)
 	}
-	want := []string{"-P", "openrouter", "-m", "anthropic/claude-opus-4.6", "-k", "sk-or-test", "--auto-approve", "false"}
+	want := []string{"-P", testProvider().ID, "-m", "anthropic/claude-opus-4.6", "-k", "sk-or-test", "--auto-approve", "false"}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
@@ -28,7 +28,7 @@ func TestClineCommandPathArgsEnv(t *testing.T) {
 	// credentials from ITS OWN environment. Setting it there is what stops a
 	// stray OPENROUTER_API_KEY export from becoming the daemon's key for the
 	// rest of its life (the Landmine 3 class, one process removed).
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 }
@@ -44,7 +44,7 @@ func TestClineCommandPathArgsEnv(t *testing.T) {
 // providers.json key alike. The cost (key visible in /proc/<pid>/cmdline) is
 // accepted; Apply is what contains the other cost.
 func TestClineCommandPutsKeyOnArgv(t *testing.T) {
-	c := &Cline{LookPath: stubLookPath("/usr/local/bin/cline")}
+	c := &Cline{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/cline")}
 	cmd, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
 	if err != nil {
 		t.Fatalf("Command: %v", err)
@@ -59,14 +59,14 @@ func TestClineCommandPutsKeyOnArgv(t *testing.T) {
 }
 
 func TestClineCommandRequiresAPIKey(t *testing.T) {
-	c := &Cline{LookPath: stubLookPath("/usr/local/bin/cline")}
+	c := &Cline{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/cline")}
 	if _, err := c.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestClineCommandRejectsConflictingExtras(t *testing.T) {
-	c := &Cline{LookPath: stubLookPath("/usr/local/bin/cline")}
+	c := &Cline{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/cline")}
 	for _, extras := range [][]string{
 		{"-m", "x/y"}, {"-mx/y"}, {"--model", "x/y"}, {"--model=x/y"},
 		{"-P", "cline"}, {"-Pcline"}, {"--provider", "cline"}, {"--provider=cline"},
@@ -97,7 +97,7 @@ func TestClineDoesNotClaimCredentialShadowing(t *testing.T) {
 		[]byte(`{"providers":{"openrouter":{"settings":{"apiKey":"sk-or-theirs"}}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := any(&Cline{}).(CredentialShadowCheck); ok {
+	if _, ok := any(&Cline{Provider: testProvider(), Host: testHost()}).(CredentialShadowCheck); ok {
 		t.Error("*Cline implements CredentialShadowCheck again; its premise (env loses to a saved key) does not hold now that the launcher passes -k")
 	}
 }
@@ -108,7 +108,7 @@ func TestClineDoesNotClaimCredentialShadowing(t *testing.T) {
 // runs at all.
 func TestClineImplementsConfigWriter(t *testing.T) {
 	var _ ConfigWriter = (*Cline)(nil)
-	if _, ok := any(&Cline{}).(ConfigWriter); !ok {
+	if _, ok := any(&Cline{Provider: testProvider(), Host: testHost()}).(ConfigWriter); !ok {
 		t.Fatal("*Cline does not satisfy ConfigWriter")
 	}
 }
@@ -138,7 +138,7 @@ func TestClineApplyRestoresPriorProvidersFile(t *testing.T) {
 	prior := `{"version":1,"providers":{"openrouter":{"settings":{"model":"theirs/model"}}}}`
 	path := clineProviders(t, home, prior, 0o600)
 
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	restore, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -180,7 +180,7 @@ func TestClineRestorePreservesProvidersFileMode(t *testing.T) {
 	home := testHome(t)
 	path := clineProviders(t, home, `{"version":1,"providers":{}}`, 0o600)
 
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	restore, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -209,7 +209,7 @@ func TestClineRestorePreservesProvidersFileMode(t *testing.T) {
 // rather than leaving ours as the new "saved" credential.
 func TestClineApplyRemovesAFileItDidNotFind(t *testing.T) {
 	home := testHome(t)
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	restore, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -232,7 +232,7 @@ func TestClineApplyRestoreToleratesADeletedFile(t *testing.T) {
 	prior := `{"version":1,"providers":{}}`
 	path := clineProviders(t, home, prior, 0o600)
 
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	restore, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -263,14 +263,14 @@ func TestClineApplyRefusesAnUnreadableProvidersFile(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, ".cline", "data", "settings", "providers.json"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	if _, err := c.Apply(Request{Model: testModel(), APIKey: "sk-or-ours"}); err == nil {
 		t.Fatal("Apply succeeded on an unreadable providers.json, want an error")
 	}
 }
 
 func TestClineInstallHint(t *testing.T) {
-	c := &Cline{}
+	c := &Cline{Provider: testProvider(), Host: testHost()}
 	if hint := c.InstallHint(); !strings.Contains(hint, "npm install -g cline") {
 		t.Errorf("InstallHint = %q", hint)
 	}

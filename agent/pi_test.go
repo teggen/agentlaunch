@@ -10,7 +10,7 @@ import (
 )
 
 func TestPiCommandPathArgsEnv(t *testing.T) {
-	p := &Pi{LookPath: stubLookPath("/usr/local/bin/pi")}
+	p := &Pi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/pi")}
 	cmd, err := p.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -24,29 +24,29 @@ func TestPiCommandPathArgsEnv(t *testing.T) {
 	}
 	// Bare OpenRouter slug: pi selects the provider with --provider, never
 	// an "openrouter/" prefix on the model (that is omp's dialect, not pi's).
-	want := []string{"--provider", "openrouter", "--model", "anthropic/claude-opus-4.6", "--thinking", "high"}
+	want := []string{"--provider", testProvider().ID, "--model", "anthropic/claude-opus-4.6", "--thinking", "high"}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 	for _, e := range cmd.Env {
-		if strings.Contains(e, "sk-or-test") && !strings.HasPrefix(e, "OPENROUTER_API_KEY=") {
+		if strings.Contains(e, "sk-or-test") && !strings.HasPrefix(e, testProvider().APIKeyEnv+"=") {
 			t.Errorf("key leaked into unexpected env entry %q", e)
 		}
 	}
 }
 
 func TestPiCommandRequiresAPIKey(t *testing.T) {
-	p := &Pi{LookPath: stubLookPath("/usr/local/bin/pi")}
+	p := &Pi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/pi")}
 	if _, err := p.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestPiCommandRejectsConflictingExtras(t *testing.T) {
-	p := &Pi{LookPath: stubLookPath("/usr/local/bin/pi")}
+	p := &Pi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/pi")}
 	for _, extras := range [][]string{
 		{"-m", "x/y"}, {"-mx/y"}, {"--model", "x/y"}, {"--model=x/y"},
 		{"--provider", "anthropic"}, {"--provider=anthropic"},
@@ -62,7 +62,7 @@ func TestPiFindPathFallback(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 
-	missing := &Pi{LookPath: notOnPath}
+	missing := &Pi{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 	if missing.CheckInstalled() {
 		t.Error("CheckInstalled = true in an empty HOME")
 	}
@@ -80,7 +80,7 @@ func TestPiFindPathFallback(t *testing.T) {
 }
 
 func TestPiInstallHint(t *testing.T) {
-	p := &Pi{}
+	p := &Pi{Provider: testProvider(), Host: testHost()}
 	if hint := p.InstallHint(); !strings.Contains(hint, "@earendil-works/pi-coding-agent") {
 		t.Errorf("InstallHint = %q; the legacy @mariozechner package is deprecated", hint)
 	}
@@ -88,7 +88,7 @@ func TestPiInstallHint(t *testing.T) {
 
 func TestPiShadowedCredential(t *testing.T) {
 	home := testHome(t)
-	p := &Pi{}
+	p := &Pi{Provider: testProvider(), Host: testHost()}
 
 	if msg := p.ShadowedCredential(); msg != "" {
 		t.Errorf("no auth.json: msg = %q, want empty", msg)
@@ -107,7 +107,7 @@ func TestPiShadowedCredential(t *testing.T) {
 		t.Errorf("auth.json without openrouter: msg = %q, want empty", msg)
 	}
 
-	if err := os.WriteFile(authPath, []byte(`{"openrouter":{"type":"api_key"}}`), 0o600); err != nil {
+	if err := os.WriteFile(authPath, []byte(`{"`+testProvider().ID+`":{"type":"api_key"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if msg := p.ShadowedCredential(); !strings.Contains(msg, "auth.json") {

@@ -30,6 +30,9 @@ const hermesMinContext = 64000
 // Doc-verified on v0.20.0 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/hermes.md.
 type Hermes struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -78,8 +81,9 @@ func (h *Hermes) findPath() (string, error) {
 // starts with a different subcommand is refused rather than silently
 // misconfigured.
 func (h *Hermes) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("hermes: an OpenRouter API key is required")
+	key, err := h.Provider.Credential("hermes", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(h.Host, "hermes", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -94,12 +98,16 @@ func (h *Hermes) Command(req Request) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	args := []string{"chat", "--provider", "openrouter", "--model", req.Model.ID}
+	args := []string{"chat", "--provider", h.Provider.ID, "--model", req.Model.ID}
 	args = append(args, req.ExtraArgs...)
 	env := []string{
-		"OPENROUTER_API_KEY=" + req.APIKey,
-		// Documented hardening pin; hermes's default already matches.
-		"OPENROUTER_BASE_URL=" + openrouter.DefaultBaseURL,
+		h.Provider.EnvEntry(key),
+	}
+	// Documented hardening pin; hermes derives both variable names from the
+	// provider it was told to use, so the pin only exists when we have a
+	// base URL to pin it to.
+	if h.Provider.BaseURL != "" {
+		env = append(env, h.Provider.UpperID()+"_BASE_URL="+h.Provider.BaseURL)
 	}
 	return Command{Path: path, Args: args, Env: env}, nil
 }
@@ -127,37 +135,39 @@ func (h *Hermes) InstallHint() string {
 }
 
 // ShadowedCredential reports stored hermes credentials that can outrank or
-// rotate past the key this launch provides: an OPENROUTER_API_KEY line in
-// ~/.hermes/.env, or an OpenRouter credential pool in ~/.hermes/auth.json.
+// rotate past the key this launch provides: a key line for the provider's
+// variable in ~/.hermes/.env, or a credential pool for the provider in
+// ~/.hermes/auth.json. Both are keyed on the provider, since hermes stores
+// one set per provider it knows about.
 func (h *Hermes) ShadowedCredential() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	if hermesEnvHasOpenRouterKey(filepath.Join(home, ".hermes", ".env")) {
-		return "hermes has an OPENROUTER_API_KEY saved in ~/.hermes/.env that may override the key this launch provides"
+	if hermesEnvHasProviderKey(filepath.Join(home, ".hermes", ".env"), h.Provider.APIKeyEnv) {
+		return "hermes has a " + h.Provider.APIKeyEnv + " saved in ~/.hermes/.env that may override the key this launch provides"
 	}
-	if hermesAuthHasOpenRouter(filepath.Join(home, ".hermes", "auth.json")) {
-		return "hermes has stored OpenRouter credentials (~/.hermes/auth.json) that may rotate past the key this launch provides"
+	if hermesAuthHasProvider(filepath.Join(home, ".hermes", "auth.json"), h.Provider.ID) {
+		return "hermes has stored " + h.Provider.DisplayName + " credentials (~/.hermes/auth.json) that may rotate past the key this launch provides"
 	}
 	return ""
 }
 
-func hermesEnvHasOpenRouterKey(path string) bool {
+func hermesEnvHasProviderKey(path, envVar string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
-		if v, ok := strings.CutPrefix(line, "OPENROUTER_API_KEY="); ok && strings.TrimSpace(v) != "" {
+		if v, ok := strings.CutPrefix(line, envVar+"="); ok && strings.TrimSpace(v) != "" {
 			return true
 		}
 	}
 	return false
 }
 
-func hermesAuthHasOpenRouter(path string) bool {
+func hermesAuthHasProvider(path, providerID string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
@@ -166,6 +176,6 @@ func hermesAuthHasOpenRouter(path string) bool {
 	if err := json.Unmarshal(data, &store); err != nil {
 		return false
 	}
-	_, ok := store["openrouter"]
+	_, ok := store[providerID]
 	return ok
 }

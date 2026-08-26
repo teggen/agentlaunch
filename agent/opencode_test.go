@@ -11,7 +11,7 @@ import (
 )
 
 func TestOpenCodeCommandPathArgsEnv(t *testing.T) {
-	o := &OpenCode{LookPath: stubLookPath("/usr/local/bin/opencode")}
+	o := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/opencode")}
 	cmd, err := o.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -28,24 +28,24 @@ func TestOpenCodeCommandPathArgsEnv(t *testing.T) {
 	}
 	// The model reference is provider/model where the model id itself
 	// contains a slash; opencode splits on the FIRST slash.
-	wantCfg := `{"$schema":"https://opencode.ai/config.json","model":"openrouter/anthropic/claude-opus-4.6"}`
+	wantCfg := `{"$schema":"https://opencode.ai/config.json","model":"` + testProvider().ModelRef("anthropic/claude-opus-4.6") + `"}`
 	if got, ok := envValue(cmd.Env, "OPENCODE_CONFIG_CONTENT"); !ok || got != wantCfg {
 		t.Errorf("OPENCODE_CONFIG_CONTENT = %q, want %q", got, wantCfg)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 }
 
 func TestOpenCodeCommandRequiresAPIKey(t *testing.T) {
-	o := &OpenCode{LookPath: stubLookPath("/usr/local/bin/opencode")}
+	o := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/opencode")}
 	if _, err := o.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestOpenCodeCommandRejectsModelExtras(t *testing.T) {
-	o := &OpenCode{LookPath: stubLookPath("/usr/local/bin/opencode")}
+	o := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/opencode")}
 	for _, extras := range [][]string{
 		{"-m", "x/y"},
 		{"--model", "x/y"},
@@ -64,7 +64,7 @@ func TestOpenCodeFindPathFallback(t *testing.T) {
 	testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
 
-	missing := &OpenCode{LookPath: notOnPath}
+	missing := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 	if _, err := missing.Command(Request{Model: testModel(), APIKey: "k"}); err == nil {
 		t.Fatal("Command found a binary in an empty HOME, want error")
 	}
@@ -74,11 +74,11 @@ func TestOpenCodeFindPathFallback(t *testing.T) {
 }
 
 func TestOpenCodeInstallable(t *testing.T) {
-	installed := &OpenCode{LookPath: stubLookPath("/usr/local/bin/opencode")}
+	installed := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/opencode")}
 	if !installed.CheckInstalled() {
 		t.Error("CheckInstalled = false with binary present")
 	}
-	o := &OpenCode{}
+	o := &OpenCode{Provider: testProvider(), Host: testHost()}
 	if hint := o.InstallHint(); !strings.Contains(hint, "https://opencode.ai/install") {
 		t.Errorf("InstallHint = %q", hint)
 	}
@@ -100,7 +100,7 @@ func TestOpenCodeFindPathUsesInstallerLocation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "opencode"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	o := &OpenCode{LookPath: func(string) (string, error) { return "", errors.New("not on PATH") }}
+	o := &OpenCode{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) { return "", errors.New("not on PATH") }}
 	if !o.CheckInstalled() {
 		t.Fatal("CheckInstalled = false with binary at ~/.opencode/bin")
 	}

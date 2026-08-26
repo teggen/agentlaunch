@@ -10,7 +10,7 @@ import (
 )
 
 func TestOMPCommandPathArgsEnv(t *testing.T) {
-	o := &OMP{LookPath: stubLookPath("/usr/local/bin/omp")}
+	o := &OMP{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/omp")}
 	cmd, err := o.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -21,24 +21,24 @@ func TestOMPCommandPathArgsEnv(t *testing.T) {
 	}
 	// The openrouter/ prefix IS the provider selection in omp's dialect. A
 	// bare slug is a valid-looking wrong value (pi's dialect, not omp's).
-	want := []string{"--model", "openrouter/anthropic/claude-opus-4.6", "-p", "hi"}
+	want := []string{"--model", testProvider().ModelRef("anthropic/claude-opus-4.6"), "-p", "hi"}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 }
 
 func TestOMPCommandRequiresAPIKey(t *testing.T) {
-	o := &OMP{LookPath: stubLookPath("/usr/local/bin/omp")}
+	o := &OMP{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/omp")}
 	if _, err := o.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestOMPCommandRejectsConflictingExtras(t *testing.T) {
-	o := &OMP{LookPath: stubLookPath("/usr/local/bin/omp")}
+	o := &OMP{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/omp")}
 	for _, extras := range [][]string{
 		{"-m", "x/y"}, {"-mx/y"}, {"--model", "x/y"}, {"--model=x/y"},
 		{"--provider", "openai"}, {"--provider=openai"},
@@ -57,7 +57,7 @@ func TestOMPCommandRejectsConflictingExtras(t *testing.T) {
 func TestOMPFindPathFallbacks(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
-	o := &OMP{LookPath: notOnPath}
+	o := &OMP{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 
 	if o.CheckInstalled() {
 		t.Error("CheckInstalled = true in an empty HOME")
@@ -81,7 +81,7 @@ func TestOMPFindPathFallbacks(t *testing.T) {
 }
 
 func TestOMPInstallHint(t *testing.T) {
-	o := &OMP{}
+	o := &OMP{Provider: testProvider(), Host: testHost()}
 	if hint := o.InstallHint(); !strings.Contains(hint, "https://omp.sh/install") {
 		t.Errorf("InstallHint = %q", hint)
 	}
@@ -94,7 +94,7 @@ func TestOMPInstallHint(t *testing.T) {
 // for one advisory string. If you are here because you added a check, update
 // the README caveat that promises omp gets no warning.
 func TestOMPDoesNotClaimCredentialShadowing(t *testing.T) {
-	if _, ok := any(&OMP{}).(CredentialShadowCheck); ok {
+	if _, ok := any(&OMP{Provider: testProvider(), Host: testHost()}).(CredentialShadowCheck); ok {
 		t.Error("*OMP implements CredentialShadowCheck; the sqlite dependency was deliberately declined")
 	}
 }

@@ -11,10 +11,13 @@ import (
 
 // OpenCode launches opencode against an OpenRouter model. The entire config
 // travels inline in OPENCODE_CONFIG_CONTENT; opencode's native openrouter
-// provider reads OPENROUTER_API_KEY. Nothing is written to disk — in
+// provider reads the provider's key variable. Nothing is written to disk — in
 // particular not opencode's model-state file, which ollama's integration
 // edits and we deliberately do not.
 type OpenCode struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -65,8 +68,9 @@ type opencodeConfig struct {
 // Command builds the opencode invocation. It is pure: nothing is written and
 // no process is started.
 func (o *OpenCode) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("opencode: an OpenRouter API key is required")
+	key, err := o.Provider.Credential("opencode", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(o.Host, "opencode", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -78,7 +82,7 @@ func (o *OpenCode) Command(req Request) (Command, error) {
 
 	cfg, err := json.Marshal(opencodeConfig{
 		Schema: "https://opencode.ai/config.json",
-		Model:  "openrouter/" + req.Model.ID,
+		Model:  o.Provider.ModelRef(req.Model.ID),
 	})
 	if err != nil {
 		return Command{}, fmt.Errorf("opencode: building inline config: %w", err)
@@ -86,7 +90,7 @@ func (o *OpenCode) Command(req Request) (Command, error) {
 
 	env := []string{
 		"OPENCODE_CONFIG_CONTENT=" + string(cfg),
-		"OPENROUTER_API_KEY=" + req.APIKey,
+		o.Provider.EnvEntry(key),
 	}
 	return Command{Path: path, Args: append([]string(nil), req.ExtraArgs...), Env: env}, nil
 }

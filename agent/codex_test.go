@@ -8,7 +8,7 @@ import (
 )
 
 func TestCodexCommandPathArgsEnv(t *testing.T) {
-	c := &Codex{LookPath: stubLookPath("/usr/local/bin/codex")}
+	c := &Codex{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/codex")}
 	cmd, err := c.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -24,31 +24,31 @@ func TestCodexCommandPathArgsEnv(t *testing.T) {
 	// codex options are global, so managed flags must precede a passthrough
 	// subcommand like "resume".
 	want := []string{
-		"-c", `model_provider="openrouter"`,
-		"-c", `model_providers.openrouter.name="OpenRouter"`,
-		"-c", `model_providers.openrouter.base_url="https://openrouter.ai/api/v1"`,
-		"-c", `model_providers.openrouter.env_key="OPENROUTER_API_KEY"`,
-		"-c", `model_providers.openrouter.wire_api="responses"`,
+		"-c", `model_provider="` + testProvider().ID + `"`,
+		"-c", "model_providers." + testProvider().ID + `.name="` + testProvider().DisplayName + `"`,
+		"-c", "model_providers." + testProvider().ID + `.base_url="` + testProvider().BaseURL + `"`,
+		"-c", "model_providers." + testProvider().ID + `.env_key="` + testProvider().APIKeyEnv + `"`,
+		"-c", "model_providers." + testProvider().ID + `.wire_api="` + testProvider().WireAPI + `"`,
 		"-m", "anthropic/claude-opus-4.6",
 		"resume",
 	}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args =\n%q\nwant\n%q", cmd.Args, want)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 }
 
 func TestCodexCommandRequiresAPIKey(t *testing.T) {
-	c := &Codex{LookPath: stubLookPath("/usr/local/bin/codex")}
+	c := &Codex{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/codex")}
 	if _, err := c.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestCodexCommandRejectsConflictingExtras(t *testing.T) {
-	c := &Codex{LookPath: stubLookPath("/usr/local/bin/codex")}
+	c := &Codex{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/codex")}
 	for _, extras := range [][]string{
 		{"-m", "gpt-5"},
 		{"-mgpt-5"},
@@ -75,7 +75,7 @@ func TestCodexCommandRejectsConflictingExtras(t *testing.T) {
 }
 
 func TestCodexCommandAllowsBenignExtras(t *testing.T) {
-	c := &Codex{LookPath: stubLookPath("/usr/local/bin/codex")}
+	c := &Codex{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/codex")}
 	extras := []string{"exec", "--full-auto", "-c", "foo=bar", "--profile", "mine", "--config", "sandbox_mode=read-only"}
 	cmd, err := c.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: extras})
 	if err != nil {
@@ -87,18 +87,18 @@ func TestCodexCommandAllowsBenignExtras(t *testing.T) {
 }
 
 func TestCodexCommandBinaryMissing(t *testing.T) {
-	c := &Codex{LookPath: func(string) (string, error) { return "", errors.New("not found") }}
+	c := &Codex{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) { return "", errors.New("not found") }}
 	if _, err := c.Command(Request{Model: testModel(), APIKey: "k"}); err == nil {
 		t.Fatal("Command with missing binary succeeded, want error")
 	}
 }
 
 func TestCodexInstallable(t *testing.T) {
-	installed := &Codex{LookPath: stubLookPath("/usr/local/bin/codex")}
+	installed := &Codex{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/codex")}
 	if !installed.CheckInstalled() {
 		t.Error("CheckInstalled = false with binary present")
 	}
-	missing := &Codex{LookPath: func(string) (string, error) { return "", errors.New("no") }}
+	missing := &Codex{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) { return "", errors.New("no") }}
 	if missing.CheckInstalled() {
 		t.Error("CheckInstalled = true with binary absent")
 	}

@@ -11,7 +11,7 @@ import (
 )
 
 func TestQwenCommandPathArgsEnv(t *testing.T) {
-	q := &Qwen{LookPath: stubLookPath("/usr/local/bin/qwen")}
+	q := &Qwen{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/qwen")}
 	cmd, err := q.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -28,10 +28,10 @@ func TestQwenCommandPathArgsEnv(t *testing.T) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
 	for key, val := range map[string]string{
-		"OPENAI_BASE_URL":    "https://openrouter.ai/api/v1",
-		"OPENAI_API_KEY":     "sk-or-test",
-		"OPENROUTER_API_KEY": "sk-or-test",
-		"OPENAI_MODEL":       "anthropic/claude-opus-4.6",
+		"OPENAI_BASE_URL":        testProvider().BaseURL,
+		"OPENAI_API_KEY":         "sk-or-test",
+		testProvider().APIKeyEnv: "sk-or-test",
+		"OPENAI_MODEL":           "anthropic/claude-opus-4.6",
 	} {
 		if got, ok := envValue(cmd.Env, key); !ok || got != val {
 			t.Errorf("%s = %q, %v; want %q", key, got, ok, val)
@@ -40,14 +40,14 @@ func TestQwenCommandPathArgsEnv(t *testing.T) {
 }
 
 func TestQwenCommandRequiresAPIKey(t *testing.T) {
-	q := &Qwen{LookPath: stubLookPath("/usr/local/bin/qwen")}
+	q := &Qwen{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/qwen")}
 	if _, err := q.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestQwenCommandRejectsConflictingExtras(t *testing.T) {
-	q := &Qwen{LookPath: stubLookPath("/usr/local/bin/qwen")}
+	q := &Qwen{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/qwen")}
 	for _, extras := range [][]string{
 		{"-m", "x"}, {"--model", "x"}, {"--model=x"},
 		{"--auth-type", "qwen-oauth"}, {"--auth-type=qwen-oauth"},
@@ -90,7 +90,7 @@ func qwenFallbackBins(home string) []string {
 func TestQwenFindPathFallbacks(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
-	q := &Qwen{LookPath: notOnPath}
+	q := &Qwen{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 
 	if q.CheckInstalled() {
 		t.Error("CheckInstalled = true in an empty HOME")
@@ -124,7 +124,7 @@ func TestQwenFindPathPrefersHighestNvmVersion(t *testing.T) {
 	}
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
-	q := &Qwen{LookPath: notOnPath}
+	q := &Qwen{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 
 	// Create two nvm version directories with qwen binaries
 	v22Dir := filepath.Join(home, ".nvm", "versions", "node", "v22.19.0", "bin")
@@ -152,7 +152,7 @@ func TestQwenFindPathPrefersHighestNvmVersion(t *testing.T) {
 }
 
 func TestQwenInstallHint(t *testing.T) {
-	q := &Qwen{}
+	q := &Qwen{Provider: testProvider(), Host: testHost()}
 	if hint := q.InstallHint(); !strings.Contains(hint, "@qwen-code/qwen-code") {
 		t.Errorf("InstallHint = %q", hint)
 	}
@@ -164,7 +164,7 @@ func TestQwenInstallHint(t *testing.T) {
 // because the collision has never been confirmed against a real qwen install.
 // A detector added before that evidence exists would be guessing.
 func TestQwenDoesNotClaimCredentialShadowing(t *testing.T) {
-	if _, ok := any(&Qwen{}).(CredentialShadowCheck); ok {
+	if _, ok := any(&Qwen{Provider: testProvider(), Host: testHost()}).(CredentialShadowCheck); ok {
 		t.Error("*Qwen implements CredentialShadowCheck; no detector ships pending live evidence")
 	}
 }

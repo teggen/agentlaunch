@@ -135,11 +135,14 @@ func TestArgGuardsNameTheHost(t *testing.T) {
 // this needs no PATH and no home directory.
 func TestEveryLauncherPassesItsOwnHostToTheArgGuards(t *testing.T) {
 	host := Host{Name: "zzz-launch", Marker: "zzz"}
+	p := testProvider()
 	launchers := []Launcher{
-		&Claude{Host: host}, &Codex{Host: host}, &OpenCode{Host: host},
-		&Pi{Host: host}, &Hermes{Host: host}, &Qwen{Host: host},
-		&Cline{Host: host}, &Kimi{Host: host}, &OMP{Host: host},
-		&OpenClaw{Host: host}, &Droid{Host: host},
+		&Claude{Provider: p, Host: host}, &Codex{Provider: p, Host: host},
+		&OpenCode{Provider: p, Host: host}, &Pi{Provider: p, Host: host},
+		&Hermes{Provider: p, Host: host}, &Qwen{Provider: p, Host: host},
+		&Cline{Provider: p, Host: host}, &Kimi{Provider: p, Host: host},
+		&OMP{Provider: p, Host: host}, &OpenClaw{Provider: p, Host: host},
+		&Droid{Provider: p, Host: host},
 	}
 	if want := len(List()) - 3; len(launchers) != want {
 		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
@@ -173,9 +176,9 @@ func TestBespokeRefusalsNameTheHost(t *testing.T) {
 		l    Launcher
 		req  Request
 	}{
-		{"codex -c override", &Codex{Host: host}, req("-c", `model_provider="other"`)},
-		{"hermes subcommand", &Hermes{Host: host}, req("serve")},
-		{"openclaw admin", &OpenClaw{Host: host}, req("gateway")},
+		{"codex -c override", &Codex{Provider: testProvider(), Host: host}, req("-c", `model_provider="other"`)},
+		{"hermes subcommand", &Hermes{Provider: testProvider(), Host: host}, req("serve")},
+		{"openclaw admin", &OpenClaw{Provider: testProvider(), Host: host}, req("gateway")},
 	} {
 		_, err := tc.l.Command(tc.req)
 		if err == nil {

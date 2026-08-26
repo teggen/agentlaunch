@@ -30,7 +30,7 @@ func readDroidSettings(t *testing.T, path string) map[string]any {
 }
 
 func TestDroidCommandArgsAndEnv(t *testing.T) {
-	d := &Droid{Host: testHost(), LookPath: stubLookPath("/usr/local/bin/droid")}
+	d := &Droid{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/droid")}
 	cmd, err := d.Command(Request{Model: testModel(), APIKey: "sk-or-test", ExtraArgs: []string{"exec", "hi"}})
 	if err != nil {
 		t.Fatalf("Command: %v", err)
@@ -41,7 +41,7 @@ func TestDroidCommandArgsAndEnv(t *testing.T) {
 	if want := []string{"exec", "hi"}; !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 	for _, extras := range [][]string{{"-m", "x"}, {"--model", "x"}, {"--model=x"}} {
@@ -53,7 +53,7 @@ func TestDroidCommandArgsAndEnv(t *testing.T) {
 
 func TestDroidApplyFreshFile(t *testing.T) {
 	home := testHome(t)
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
 	if err != nil {
@@ -65,7 +65,7 @@ func TestDroidApplyFreshFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(raw), "sk-or-test") {
-		t.Fatal("the real key was written to disk; only ${OPENROUTER_API_KEY} may appear")
+		t.Fatal("the real key was written to disk; only the env interpolation may appear")
 	}
 	m := readDroidSettings(t, path)
 	models := m["customModels"].([]any)
@@ -76,9 +76,9 @@ func TestDroidApplyFreshFile(t *testing.T) {
 	for key, want := range map[string]string{
 		"displayName": testHost().Marker,
 		"provider":    "generic-chat-completion-api",
-		"baseUrl":     "https://openrouter.ai/api/v1",
+		"baseUrl":     testProvider().BaseURL,
 		"model":       "anthropic/claude-opus-4.6",
-		"apiKey":      "${OPENROUTER_API_KEY}",
+		"apiKey":      testProvider().EnvRef(),
 	} {
 		if entry[key] != want {
 			t.Errorf("entry[%q] = %v, want %q", key, entry[key], want)
@@ -118,7 +118,7 @@ func TestDroidCreatesFactoryDirWithoutWorldAccess(t *testing.T) {
 	}
 	home := testHome(t)
 
-	if _, err := (&Droid{Host: testHost()}).Apply(Request{Model: testModel(), APIKey: "sk-or-test"}); err != nil {
+	if _, err := (&Droid{Provider: testProvider(), Host: testHost()}).Apply(Request{Model: testModel(), APIKey: "sk-or-test"}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 	info, err := os.Stat(filepath.Dir(droidSettingsPath(t, home)))
@@ -158,7 +158,7 @@ func TestDroidPreservesSettingsFileMode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -188,7 +188,7 @@ func TestDroidPreservesSettingsFileMode(t *testing.T) {
 // cleanup os.Remove must not turn that into a restore error.
 func TestDroidRestoreToleratesFileAlreadyDeleted(t *testing.T) {
 	home := testHome(t)
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
 	if err != nil {
@@ -223,7 +223,7 @@ func TestDroidApplyPreservesForeignEntriesAndPriorDefault(t *testing.T) {
 	}
 	priorForeignEntry := priorSettings["customModels"].([]any)[0]
 
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
@@ -275,13 +275,13 @@ func TestDroidApplyReplacesStaleMarkerEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A crashed prior run left our marker entry with an old model.
-	stale := `{"customModels":[{"displayName":"acme-launch","provider":"generic-chat-completion-api","baseUrl":"https://openrouter.ai/api/v1","model":"old/model","apiKey":"${OPENROUTER_API_KEY}"}]}`
+	stale := `{"customModels":[{"displayName":"acme-launch","provider":"generic-chat-completion-api","baseUrl":"https://api.acme.test/v9","model":"old/model","apiKey":"${ACME_API_KEY}"}]}`
 	path := filepath.Join(dir, "settings.local.json")
 	if err := os.WriteFile(path, []byte(stale), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{definitely not json`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err == nil {
 		t.Fatal("Apply clobbered a file it could not parse")
 	}
@@ -320,7 +320,7 @@ func TestDroidApplyRefusesUnparseableFile(t *testing.T) {
 
 func TestDroidRestoreKeepsFileWhenUserAddedEntriesMidSession(t *testing.T) {
 	home := testHome(t)
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 
 	// Apply on a fresh HOME (no file) — creates the file
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk-or-test"})
@@ -336,9 +336,9 @@ func TestDroidRestoreKeepsFileWhenUserAddedEntriesMidSession(t *testing.T) {
 			map[string]any{
 				"displayName":     testHost().Marker,
 				"provider":        "generic-chat-completion-api",
-				"baseUrl":         "https://openrouter.ai/api/v1",
+				"baseUrl":         testProvider().BaseURL,
 				"model":           "anthropic/claude-opus-4.6",
-				"apiKey":          "${OPENROUTER_API_KEY}",
+				"apiKey":          testProvider().EnvRef(),
 				"maxOutputTokens": float64(64000),
 			},
 			// User's foreign entry added mid-session
@@ -397,7 +397,7 @@ func TestDroidApplyRefusesWrongShapedCustomModels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	if _, err := d.Apply(Request{Model: testModel(), APIKey: "sk"}); err == nil {
 		t.Fatal("Apply accepted a customModels it could not understand")
 	}
@@ -430,7 +430,7 @@ func TestDroidApplyAcceptsNullCustomModels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	d := &Droid{Host: testHost()}
+	d := &Droid{Provider: testProvider(), Host: testHost()}
 	restore, err := d.Apply(Request{Model: testModel(), APIKey: "sk"})
 	if err != nil {
 		t.Fatalf("Apply refused a null customModels: %v", err)

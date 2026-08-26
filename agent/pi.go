@@ -14,6 +14,9 @@ import (
 // Doc-verified on pi 0.84.1 (2026-08-09); see
 // .superpowers/sdd/2026-08-09-tier-2-research/pi.md.
 type Pi struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -52,10 +55,11 @@ func (p *Pi) findPath() (string, error) {
 // Command builds the pi invocation. Pure: nothing written, nothing spawned.
 // The slug passes through verbatim — pi's catalog keys models by bare
 // OpenRouter slugs; the provider is selected by --provider, never by an
-// "openrouter/" prefix on the model.
+// provider-prefixed model reference (that is omp's dialect, not pi's).
 func (p *Pi) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("pi: an OpenRouter API key is required")
+	key, err := p.Provider.Credential("pi", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(p.Host, "pi", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -67,9 +71,9 @@ func (p *Pi) Command(req Request) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	args := []string{"--provider", "openrouter", "--model", req.Model.ID}
+	args := []string{"--provider", p.Provider.ID, "--model", req.Model.ID}
 	args = append(args, req.ExtraArgs...)
-	env := []string{"OPENROUTER_API_KEY=" + req.APIKey}
+	env := []string{p.Provider.EnvEntry(key)}
 	return Command{Path: path, Args: args, Env: env}, nil
 }
 
@@ -88,7 +92,7 @@ func (p *Pi) InstallHint() string {
 
 // ShadowedCredential reports pi's documented precedence trap: a credential
 // in ~/.pi/agent/auth.json (e.g. from "/login openrouter") outranks the
-// OPENROUTER_API_KEY env var, so the session would bill that stored account
+// provider's key variable, so the session would bill that stored account
 // instead of the key this launch provides.
 func (p *Pi) ShadowedCredential() string {
 	home, err := os.UserHomeDir()
@@ -103,7 +107,7 @@ func (p *Pi) ShadowedCredential() string {
 	if err := json.Unmarshal(data, &store); err != nil {
 		return ""
 	}
-	if _, ok := store["openrouter"]; !ok {
+	if _, ok := store[p.Provider.ID]; !ok {
 		return ""
 	}
 	return "pi has a stored OpenRouter credential (~/.pi/agent/auth.json) that outranks the key this launch provides"

@@ -14,7 +14,7 @@ import (
 
 func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	o := &OpenClaw{LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	req := Request{Model: testModel(), APIKey: "sk-or-test"}
 
 	cmd, err := o.Command(req)
@@ -41,7 +41,8 @@ func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 	}
 	// Refs are lowercased and openrouter/-prefixed; map marshaling sorts
 	// keys, so the content is deterministic.
-	wantCfg := `{"agents":{"defaults":{"model":{"primary":"openrouter/anthropic/claude-opus-4.6"},"models":{"openrouter/anthropic/claude-opus-4.6":{}}}}}`
+	ref := testProvider().ModelRef("anthropic/claude-opus-4.6")
+	wantCfg := `{"agents":{"defaults":{"model":{"primary":"` + ref + `"},"models":{"` + ref + `":{}}}}}`
 	if string(files[0].Contents) != wantCfg {
 		t.Errorf("staged contents =\n%s\nwant\n%s", files[0].Contents, wantCfg)
 	}
@@ -55,14 +56,14 @@ func TestOpenClawInteractiveCommandAndStagedFile(t *testing.T) {
 	if got, ok := envValue(cmd.Env, "OPENCLAW_CONFIG_PATH"); !ok || got != files[0].Path {
 		t.Errorf("OPENCLAW_CONFIG_PATH = %q, %v; want %q", got, ok, files[0].Path)
 	}
-	if got, ok := envValue(cmd.Env, "OPENROUTER_API_KEY"); !ok || got != "sk-or-test" {
+	if got, ok := envValue(cmd.Env, testProvider().APIKeyEnv); !ok || got != "sk-or-test" {
 		t.Errorf("OPENROUTER_API_KEY = %q, %v", got, ok)
 	}
 }
 
 func TestOpenClawLowercasesModelRef(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	o := &OpenClaw{LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	files, err := o.StagedFiles(Request{
 		Model:  openrouter.Model{ID: "MoonshotAI/Kimi-K2.5"},
 		APIKey: "k",
@@ -70,14 +71,14 @@ func TestOpenClawLowercasesModelRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StagedFiles: %v", err)
 	}
-	if !strings.Contains(string(files[0].Contents), `"openrouter/moonshotai/kimi-k2.5"`) {
+	if !strings.Contains(string(files[0].Contents), `"`+testProvider().ModelRef("moonshotai/kimi-k2.5")+`"`) {
 		t.Errorf("ref not lowercased: %s", files[0].Contents)
 	}
 }
 
 func TestOpenClawOneShotSkipsStagingAndInjectsModel(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	o := &OpenClaw{LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	req := Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -89,7 +90,7 @@ func TestOpenClawOneShotSkipsStagingAndInjectsModel(t *testing.T) {
 	}
 	// --auth-env-only composes config in memory and shuts off stored auth
 	// profiles: nothing read from disk, nothing written, env key only.
-	want := []string{"agent", "exec", "say OK", "--model", "openrouter/anthropic/claude-opus-4.6", "--auth-env-only"}
+	want := []string{"agent", "exec", "say OK", "--model", testProvider().ModelRef("anthropic/claude-opus-4.6"), "--auth-env-only"}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %q, want %q", cmd.Args, want)
 	}
@@ -107,7 +108,7 @@ func TestOpenClawOneShotSkipsStagingAndInjectsModel(t *testing.T) {
 
 func TestOpenClawCommandRejectsConflictsAndOtherSubcommands(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	o := &OpenClaw{LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	for _, extras := range [][]string{
 		{"--model", "x"}, {"--model=x"}, {"-m", "x"},
 		{"gateway", "run"}, {"daemon", "start"}, {"onboard"},
@@ -120,18 +121,18 @@ func TestOpenClawCommandRejectsConflictsAndOtherSubcommands(t *testing.T) {
 
 func TestOpenClawRequiresAPIKeyAndBinary(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	o := &OpenClaw{LookPath: stubLookPath("/usr/local/bin/openclaw")}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/openclaw")}
 	if _, err := o.Command(Request{Model: testModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
-	missing := &OpenClaw{LookPath: func(string) (string, error) { return "", errors.New("no") }}
+	missing := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) { return "", errors.New("no") }}
 	if missing.CheckInstalled() {
 		t.Error("CheckInstalled = true with neither openclaw nor clawdbot")
 	}
 }
 
 func TestOpenClawFallsBackToClawdbotBinary(t *testing.T) {
-	o := &OpenClaw{LookPath: func(name string) (string, error) {
+	o := &OpenClaw{Provider: testProvider(), Host: testHost(), LookPath: func(name string) (string, error) {
 		if name == "clawdbot" {
 			return "/usr/local/bin/clawdbot", nil
 		}
@@ -144,7 +145,7 @@ func TestOpenClawFallsBackToClawdbotBinary(t *testing.T) {
 
 func TestOpenClawShadowedCredential(t *testing.T) {
 	home := testHome(t)
-	o := &OpenClaw{}
+	o := &OpenClaw{Provider: testProvider(), Host: testHost()}
 
 	if msg := o.ShadowedCredential(); msg != "" {
 		t.Errorf("fresh HOME: msg = %q, want empty", msg)
@@ -160,7 +161,7 @@ func TestOpenClawShadowedCredential(t *testing.T) {
 	if msg := o.ShadowedCredential(); msg != "" {
 		t.Errorf("non-openrouter profile: msg = %q, want empty", msg)
 	}
-	if err := os.WriteFile(path, []byte(`{"profiles":{"openrouter:default":{"key":"sk-or-old"}}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"profiles":{"`+testProvider().ID+`:default":{"key":"sk-or-old"}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if msg := o.ShadowedCredential(); !strings.Contains(msg, "auth profile") {

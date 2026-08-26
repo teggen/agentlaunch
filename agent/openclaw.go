@@ -23,6 +23,9 @@ import (
 // --auth-env-only compose config in memory. Doc-verified on 2026.7.1-2
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/openclaw.md.
 type OpenClaw struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -55,8 +58,8 @@ func (o *OpenClaw) findPath() (string, error) {
 
 // openclawModelRef converts an OpenRouter slug to openclaw's model ref:
 // provider-prefixed and lowercased (openclaw normalizes refs to lowercase).
-func openclawModelRef(slug string) string {
-	return "openrouter/" + strings.ToLower(slug)
+func openclawModelRef(p Provider, slug string) string {
+	return p.ModelRef(strings.ToLower(slug))
 }
 
 // openclawConfigPath is the launcher-owned staged config location.
@@ -78,8 +81,9 @@ func openclawOneShot(extras []string) bool {
 // Command builds the openclaw invocation. Pure: the staged file is declared
 // by StagedFiles and written by the launch service, never here.
 func (o *OpenClaw) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("openclaw: an OpenRouter API key is required")
+	key, err := o.Provider.Credential("openclaw", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(o.Host, "openclaw", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -91,14 +95,14 @@ func (o *OpenClaw) Command(req Request) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	ref := openclawModelRef(req.Model.ID)
+	ref := openclawModelRef(o.Provider, req.Model.ID)
 
 	if openclawOneShot(req.ExtraArgs) {
 		args := append(append([]string(nil), req.ExtraArgs...), "--model", ref, "--auth-env-only")
 		return Command{
 			Path: path,
 			Args: args,
-			Env:  []string{"OPENROUTER_API_KEY=" + req.APIKey},
+			Env:  []string{o.Provider.EnvEntry(key)},
 		}, nil
 	}
 
@@ -109,7 +113,7 @@ func (o *OpenClaw) Command(req Request) (Command, error) {
 	args := append([]string{"tui", "--local"}, req.ExtraArgs...)
 	env := []string{
 		"OPENCLAW_CONFIG_PATH=" + cfgPath,
-		"OPENROUTER_API_KEY=" + req.APIKey,
+		o.Provider.EnvEntry(key),
 	}
 	return Command{Path: path, Args: args, Env: env}, nil
 }
@@ -121,7 +125,7 @@ func (o *OpenClaw) StagedFiles(req Request) ([]StagedFile, error) {
 	if openclawOneShot(req.ExtraArgs) {
 		return nil, nil
 	}
-	ref := openclawModelRef(req.Model.ID)
+	ref := openclawModelRef(o.Provider, req.Model.ID)
 	cfg := map[string]any{
 		"agents": map[string]any{
 			"defaults": map[string]any{
@@ -156,7 +160,8 @@ func (o *OpenClaw) InstallHint() string {
 	return "Install OpenClaw: npm install -g openclaw@latest"
 }
 
-// ShadowedCredential reports stored OpenClaw auth profiles for OpenRouter:
+// ShadowedCredential reports stored OpenClaw auth profiles for the bound
+// provider:
 // a prior onboard/OAuth stores a key that participates in auth rotation,
 // and its precedence against the env key is undocumented — surface it.
 func (o *OpenClaw) ShadowedCredential() string {
@@ -169,14 +174,14 @@ func (o *OpenClaw) ShadowedCredential() string {
 		return ""
 	}
 	for _, m := range matches {
-		if openclawProfilesHaveOpenRouter(m) {
-			return "openclaw has a stored OpenRouter auth profile (" + m + ") that may take precedence over the key this launch provides"
+		if openclawProfilesHaveProvider(m, o.Provider.ID) {
+			return "openclaw has a stored " + o.Provider.DisplayName + " auth profile (" + m + ") that may take precedence over the key this launch provides"
 		}
 	}
 	return ""
 }
 
-func openclawProfilesHaveOpenRouter(path string) bool {
+func openclawProfilesHaveProvider(path, providerID string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
@@ -188,7 +193,7 @@ func openclawProfilesHaveOpenRouter(path string) bool {
 		return false
 	}
 	for key := range doc.Profiles {
-		if strings.Contains(key, "openrouter") {
+		if strings.Contains(key, providerID) {
 			return true
 		}
 	}

@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // Kimi launches Moonshot AI's Kimi Code CLI against an OpenRouter model via
@@ -23,6 +21,9 @@ import (
 // .superpowers/sdd/2026-08-09-tier-2-research/kimi.md). Doc-verified on
 // kimi-code 0.34.0, KIMI_MODEL_* channel present since 0.6.0 (2026-08-09).
 type Kimi struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -85,8 +86,13 @@ func (k *Kimi) findPath() (string, error) {
 // catalog does not know the context length, the variable is omitted so
 // kimi's documented default applies instead of a fabricated zero.
 func (k *Kimi) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("kimi: an OpenRouter API key is required")
+	if k.Provider.BaseURL == "" {
+		return Command{}, fmt.Errorf("kimi: %s exposes no OpenAI-compatible endpoint",
+			k.Provider.DisplayName)
+	}
+	key, err := k.Provider.Credential("kimi", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(k.Host, "kimi", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -100,9 +106,9 @@ func (k *Kimi) Command(req Request) (Command, error) {
 	}
 	env := []string{
 		"KIMI_MODEL_NAME=" + req.Model.ID,
-		"KIMI_MODEL_API_KEY=" + req.APIKey,
+		"KIMI_MODEL_API_KEY=" + key,
 		"KIMI_MODEL_PROVIDER_TYPE=openai",
-		"KIMI_MODEL_BASE_URL=" + openrouter.DefaultBaseURL,
+		"KIMI_MODEL_BASE_URL=" + k.Provider.BaseURL,
 	}
 	if req.Model.ContextLength > 0 {
 		env = append(env, fmt.Sprintf("KIMI_MODEL_MAX_CONTEXT_SIZE=%d", req.Model.ContextLength))

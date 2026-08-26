@@ -20,6 +20,9 @@ import (
 // caveat lives in the spec and README. Doc-verified on 17.2.11
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/omp.md.
 type OMP struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -63,8 +66,9 @@ func (o *OMP) findPath() (string, error) {
 // spawned. Passthrough --api-key stays allowed: it is the user's explicit,
 // documented override of omp's stored-credential precedence.
 func (o *OMP) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("omp: an OpenRouter API key is required")
+	key, err := o.Provider.Credential("omp", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(o.Host, "omp", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -76,9 +80,9 @@ func (o *OMP) Command(req Request) (Command, error) {
 	if err != nil {
 		return Command{}, err
 	}
-	args := []string{"--model", "openrouter/" + req.Model.ID}
+	args := []string{"--model", o.Provider.ModelRef(req.Model.ID)}
 	args = append(args, req.ExtraArgs...)
-	env := []string{"OPENROUTER_API_KEY=" + req.APIKey}
+	env := []string{o.Provider.EnvEntry(key)}
 	return Command{Path: path, Args: args, Env: env}, nil
 }
 

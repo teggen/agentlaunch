@@ -16,7 +16,7 @@ func kimiModel() openrouter.Model {
 }
 
 func TestKimiCommandPathArgsEnv(t *testing.T) {
-	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 	cmd, err := k.Command(Request{
 		Model:     kimiModel(),
 		APIKey:    "sk-or-test",
@@ -35,7 +35,7 @@ func TestKimiCommandPathArgsEnv(t *testing.T) {
 		"KIMI_MODEL_NAME":             "moonshotai/kimi-k2.5",
 		"KIMI_MODEL_API_KEY":          "sk-or-test",
 		"KIMI_MODEL_PROVIDER_TYPE":    "openai",
-		"KIMI_MODEL_BASE_URL":         "https://openrouter.ai/api/v1",
+		"KIMI_MODEL_BASE_URL":         testProvider().BaseURL,
 		"KIMI_MODEL_MAX_CONTEXT_SIZE": "262144",
 	} {
 		if got, ok := envValue(cmd.Env, key); !ok || got != val {
@@ -45,7 +45,7 @@ func TestKimiCommandPathArgsEnv(t *testing.T) {
 }
 
 func TestKimiCommandOmitsContextSizeWhenUnknown(t *testing.T) {
-	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 	cmd, err := k.Command(Request{
 		Model:  openrouter.Model{ID: "moonshotai/kimi-k2.5"}, // ContextLength 0
 		APIKey: "sk-or-test",
@@ -61,14 +61,14 @@ func TestKimiCommandOmitsContextSizeWhenUnknown(t *testing.T) {
 }
 
 func TestKimiCommandRequiresAPIKey(t *testing.T) {
-	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 	if _, err := k.Command(Request{Model: kimiModel()}); err == nil {
 		t.Fatal("Command with empty APIKey succeeded, want error")
 	}
 }
 
 func TestKimiCommandRejectsConflictingExtras(t *testing.T) {
-	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 	for _, extras := range [][]string{
 		{"-m", "other"}, {"-mother"}, {"--model", "other"}, {"--model=other"},
 		{"--config", "{}"}, {"--config={}"},
@@ -84,7 +84,7 @@ func TestKimiCommandRejectsConflictingExtras(t *testing.T) {
 func TestKimiFindPathPrefersKimiCodeOverLegacy(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
-	k := &Kimi{LookPath: notOnPath}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 
 	if k.CheckInstalled() {
 		t.Error("CheckInstalled = true in an empty HOME")
@@ -124,7 +124,7 @@ func TestKimiFindPathPrefersKimiCodeOverLegacy(t *testing.T) {
 func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
 	home := testHome(t)
 	notOnPath := func(string) (string, error) { return "", errors.New("not on PATH") }
-	k := &Kimi{LookPath: notOnPath}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: notOnPath}
 
 	if msg := k.ShadowedCredential(); msg != "" {
 		t.Errorf("no binary anywhere: msg = %q, want empty", msg)
@@ -162,7 +162,7 @@ func TestKimiShadowedCredentialFlagsLegacyOnlyInstall(t *testing.T) {
 // via LookPath is assumed current, with no path-heuristic warning.
 func TestKimiShadowedCredentialTrustsPATHHit(t *testing.T) {
 	testHome(t)
-	k := &Kimi{LookPath: stubLookPath("/usr/local/bin/kimi")}
+	k := &Kimi{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/kimi")}
 
 	if msg := k.ShadowedCredential(); msg != "" {
 		t.Errorf("PATH hit: msg = %q, want empty", msg)

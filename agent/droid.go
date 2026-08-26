@@ -6,8 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // Droid launches Factory's droid via the ConfigWriter escape hatch — the
@@ -17,13 +15,16 @@ import (
 // decision at spec review: ConfigWriter, not unsupported). Apply writes a
 // single marker-owned customModels entry into ~/.factory/settings.local.json
 // (the merge-friendly local layer, never settings.json) with
-// apiKey "${OPENROUTER_API_KEY}" — env interpolation, so the key never
+// apiKey "${<provider key var>}" — env interpolation, so the key never
 // touches disk — and points the default-model key at it; restore puts both
 // back. Model selection lives in the file, NOT on argv: the entry's
 // index-derived custom: ID is only knowable at Apply time, and Command is
 // pure. Requires a Factory account even for BYOK. Doc-verified on 0.190.0
 // (2026-08-09); see .superpowers/sdd/2026-08-09-tier-2-research/droid.md.
 type Droid struct {
+	// Provider is the endpoint this agent is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -51,10 +52,15 @@ func droidSettingsFile() (string, error) {
 }
 
 // Command builds the droid invocation: passthrough only, no -m (see the
-// type comment), key in env for the ${OPENROUTER_API_KEY} interpolation.
+// type comment), key in env for the settings file's interpolation.
 func (d *Droid) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("droid: an OpenRouter API key is required")
+	if d.Provider.BaseURL == "" {
+		return Command{}, fmt.Errorf("droid: %s exposes no OpenAI-compatible endpoint",
+			d.Provider.DisplayName)
+	}
+	key, err := d.Provider.Credential("droid", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := rejectModelFlag(d.Host, "droid", req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -66,7 +72,7 @@ func (d *Droid) Command(req Request) (Command, error) {
 	return Command{
 		Path: path,
 		Args: append([]string(nil), req.ExtraArgs...),
-		Env:  []string{"OPENROUTER_API_KEY=" + req.APIKey},
+		Env:  []string{d.Provider.EnvEntry(key)},
 	}, nil
 }
 
@@ -104,9 +110,9 @@ func (d *Droid) Apply(req Request) (func() error, error) {
 	entry := map[string]any{
 		"displayName":     d.Host.Marker,
 		"provider":        "generic-chat-completion-api",
-		"baseUrl":         openrouter.DefaultBaseURL,
+		"baseUrl":         d.Provider.BaseURL,
 		"model":           req.Model.ID,
-		"apiKey":          "${OPENROUTER_API_KEY}",
+		"apiKey":          d.Provider.EnvRef(),
 		"maxOutputTokens": 64000,
 	}
 	settings["customModels"] = append(kept, entry)

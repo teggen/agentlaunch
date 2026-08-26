@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
-
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // Codex launches the OpenAI Codex CLI against an OpenRouter model. All
 // configuration travels as -c overrides on the command line; nothing is
 // written into ~/.codex.
 type Codex struct {
+	// Provider is the endpoint codex is pointed at. Required, with no
+	// fallback — see the note on Claude.Provider.
+	Provider Provider
 	// Host identifies this tool in the guidance attached to a rejected
 	// passthrough argument, and — for droid — owns the marker stamped into
 	// the agent's own settings. Required.
@@ -36,8 +37,13 @@ func (c *Codex) lookPath(file string) (string, error) {
 // passthrough is rejected because a later -c with the same key would win and
 // silently point codex somewhere else.
 func (c *Codex) Command(req Request) (Command, error) {
-	if req.APIKey == "" {
-		return Command{}, fmt.Errorf("codex: an OpenRouter API key is required")
+	if c.Provider.BaseURL == "" {
+		return Command{}, fmt.Errorf("codex: %s exposes no OpenAI-compatible endpoint",
+			c.Provider.DisplayName)
+	}
+	key, err := c.Provider.Credential("codex", req.APIKey)
+	if err != nil {
+		return Command{}, err
 	}
 	if err := codexValidateExtraArgs(c.Host, req.ExtraArgs); err != nil {
 		return Command{}, err
@@ -47,12 +53,23 @@ func (c *Codex) Command(req Request) (Command, error) {
 		return Command{}, fmt.Errorf("codex binary not found: %w", err)
 	}
 
+	// The provider ID is an arbitrary key here rather than a name codex has
+	// to already know: model_providers.<key> declares a provider inline, so
+	// any OpenAI-compatible endpoint can be reached this way. Upstream
+	// ollama's launcher uses its own tool name as the key for the same
+	// reason.
+	//
+	// wire_api comes from the provider because it is a fact about the
+	// endpoint, not about codex. Read Landmine 18 before changing the value
+	// OpenRouter carries: "chat" is rejected at config-load time by codex
+	// >= 0.146.1, and "responses" is live-verified rather than inferred.
+	prefix := "model_providers." + c.Provider.ID + "."
 	args := []string{
-		"-c", `model_provider="openrouter"`,
-		"-c", `model_providers.openrouter.name="OpenRouter"`,
-		"-c", `model_providers.openrouter.base_url="` + openrouter.DefaultBaseURL + `"`,
-		"-c", `model_providers.openrouter.env_key="OPENROUTER_API_KEY"`,
-		"-c", `model_providers.openrouter.wire_api="responses"`,
+		"-c", `model_provider="` + c.Provider.ID + `"`,
+		"-c", prefix + `name="` + c.Provider.DisplayName + `"`,
+		"-c", prefix + `base_url="` + c.Provider.BaseURL + `"`,
+		"-c", prefix + `env_key="` + c.Provider.APIKeyEnv + `"`,
+		"-c", prefix + `wire_api="` + c.Provider.WireAPI + `"`,
 		"-m", req.Model.ID,
 	}
 	args = append(args, req.ExtraArgs...)
@@ -60,7 +77,7 @@ func (c *Codex) Command(req Request) (Command, error) {
 	// env_key makes codex read the key from this variable; setting it here
 	// (rather than relying on the user's shell) means ExecArgs' dedupe
 	// guarantees our value wins over any stray export.
-	env := []string{"OPENROUTER_API_KEY=" + req.APIKey}
+	env := []string{c.Provider.EnvEntry(key)}
 
 	return Command{Path: path, Args: args, Env: env}, nil
 }

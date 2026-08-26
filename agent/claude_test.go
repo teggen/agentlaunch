@@ -36,7 +36,7 @@ func envValue(env []string, key string) (string, bool) {
 }
 
 func TestClaudeCommandPath(t *testing.T) {
-	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
 	cmd, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
 	if err != nil {
 		t.Fatalf("Command: %v", err)
@@ -47,7 +47,7 @@ func TestClaudeCommandPath(t *testing.T) {
 }
 
 func TestClaudeCommandArgs(t *testing.T) {
-	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
 	cmd, err := c.Command(Request{
 		Model:     testModel(),
 		APIKey:    "sk-or-test",
@@ -63,14 +63,14 @@ func TestClaudeCommandArgs(t *testing.T) {
 }
 
 func TestClaudeCommandEnv(t *testing.T) {
-	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
 	cmd, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
 	if err != nil {
 		t.Fatalf("Command: %v", err)
 	}
 
 	want := map[string]string{
-		"ANTHROPIC_BASE_URL":             "https://openrouter.ai/api",
+		"ANTHROPIC_BASE_URL":             testProvider().AnthropicBaseURL,
 		"ANTHROPIC_API_KEY":              "sk-or-test",
 		"ANTHROPIC_AUTH_TOKEN":           "",
 		"ANTHROPIC_DEFAULT_FABLE_MODEL":  "anthropic/claude-opus-4.6",
@@ -96,14 +96,8 @@ func TestClaudeCommandEnv(t *testing.T) {
 	}
 }
 
-func TestClaudeBaseURLHasNoVersionSuffix(t *testing.T) {
-	if strings.HasSuffix(AnthropicBaseURL, "/v1") {
-		t.Errorf("AnthropicBaseURL = %q must not end in /v1", AnthropicBaseURL)
-	}
-}
-
 func TestClaudeCommandRequiresAPIKey(t *testing.T) {
-	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
 	if _, err := c.Command(Request{Model: testModel()}); err == nil {
 		t.Error("expected an error when the API key is empty")
 	}
@@ -115,7 +109,7 @@ func TestClaudeCommandBinaryMissing(t *testing.T) {
 	// fallback checks genuinely miss, regardless of what happens to be
 	// installed on the machine running this test.
 	testHome(t)
-	c := &Claude{LookPath: func(string) (string, error) {
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) {
 		return "", errors.New("not found")
 	}}
 	if _, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"}); err == nil {
@@ -139,7 +133,7 @@ func TestClaudeCommandFallsBackToInstallerPath(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	c := &Claude{LookPath: func(string) (string, error) {
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: func(string) (string, error) {
 		return "", errors.New("not on PATH")
 	}}
 	cmd, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
@@ -152,14 +146,14 @@ func TestClaudeCommandFallsBackToInstallerPath(t *testing.T) {
 }
 
 func TestClaudeCheckModelAcceptsAnthropic(t *testing.T) {
-	c := &Claude{}
+	c := &Claude{Provider: testProvider(), Host: testHost()}
 	if err := c.CheckModel(testModel()); err != nil {
 		t.Errorf("anthropic model rejected: %v", err)
 	}
 }
 
 func TestClaudeCheckModelWarnsOnOtherProviders(t *testing.T) {
-	c := &Claude{}
+	c := &Claude{Provider: testProvider(), Host: testHost()}
 	m := openrouter.Model{ID: "qwen/qwen3-coder", Provider: "qwen"}
 	err := c.CheckModel(m)
 	if !errors.Is(err, ErrIncompatibleModel) {
@@ -168,7 +162,7 @@ func TestClaudeCheckModelWarnsOnOtherProviders(t *testing.T) {
 }
 
 func TestClaudeIdentity(t *testing.T) {
-	c := &Claude{}
+	c := &Claude{Provider: testProvider(), Host: testHost()}
 	if c.Name() != "claude" {
 		t.Errorf("Name = %q", c.Name())
 	}
@@ -178,9 +172,9 @@ func TestClaudeIdentity(t *testing.T) {
 }
 
 func TestClaudeSatisfiesInterfaces(t *testing.T) {
-	var _ Launcher = &Claude{}
-	var _ Installable = &Claude{}
-	var _ Compatible = &Claude{}
+	var _ Launcher = &Claude{Provider: testProvider(), Host: testHost()}
+	var _ Installable = &Claude{Provider: testProvider(), Host: testHost()}
+	var _ Compatible = &Claude{Provider: testProvider(), Host: testHost()}
 }
 
 // TestClaudeCommandRejectsConflictingExtras pins claude into the rule the
@@ -189,7 +183,7 @@ func TestClaudeSatisfiesInterfaces(t *testing.T) {
 // pointing at ours, so accepting both would run the session and its subagents
 // on different models while every report says the managed one.
 func TestClaudeCommandRejectsConflictingExtras(t *testing.T) {
-	c := &Claude{LookPath: stubLookPath("/usr/local/bin/claude")}
+	c := &Claude{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
 	for _, extras := range [][]string{
 		{"-m", "x/y"}, {"-mx/y"}, {"--model", "x/y"}, {"--model=x/y"},
 	} {
@@ -208,5 +202,72 @@ func TestClaudeCommandRejectsConflictingExtras(t *testing.T) {
 	want := []string{"--model", "anthropic/claude-opus-4.6", "--resume", "--verbose"}
 	if !slices.Equal(cmd.Args, want) {
 		t.Errorf("Args = %v, want %v", cmd.Args, want)
+	}
+}
+
+// TestClaudeCredentialSlotsInvertForAKeylessProvider pins the rule that
+// produces both known-good configurations. One slot always carries the
+// credential and the other is present but empty; a provider issuing real keys
+// uses x-api-key, one that needs none uses the bearer token. Both being empty
+// is Landmine 2 — Claude Code then authenticates against Anthropic directly.
+func TestClaudeCredentialSlotsInvertForAKeylessProvider(t *testing.T) {
+	local := testProvider()
+	local.RequiresAPIKey = false
+	local.PlaceholderKey = "local"
+	local.AnthropicBaseURL = "http://127.0.0.1:11434"
+
+	c := &Claude{Provider: local, Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
+	// No key is resolved for a provider that needs none.
+	cmd, err := c.Command(Request{Model: testModel(), APIKey: ""})
+	if err != nil {
+		t.Fatalf("Command: %v", err)
+	}
+	if got, _ := envValue(cmd.Env, "ANTHROPIC_API_KEY"); got != "" {
+		t.Errorf("ANTHROPIC_API_KEY = %q, want empty for a keyless provider", got)
+	}
+	if got, _ := envValue(cmd.Env, "ANTHROPIC_AUTH_TOKEN"); got != "local" {
+		t.Errorf("ANTHROPIC_AUTH_TOKEN = %q, want the placeholder", got)
+	}
+	if got, _ := envValue(cmd.Env, "ANTHROPIC_BASE_URL"); got != "http://127.0.0.1:11434" {
+		t.Errorf("ANTHROPIC_BASE_URL = %q", got)
+	}
+
+	// Whichever way round it is, never both empty.
+	api, _ := envValue(cmd.Env, "ANTHROPIC_API_KEY")
+	tok, _ := envValue(cmd.Env, "ANTHROPIC_AUTH_TOKEN")
+	if api == "" && tok == "" {
+		t.Error("both credential slots empty: Claude Code would fall back to its own authentication")
+	}
+}
+
+// TestClaudeRefusesAProviderWithNoAnthropicSurface covers the case a bare
+// OpenAI-compatible server presents: there is nothing to point ANTHROPIC_BASE_URL
+// at, and guessing the OpenAI root would produce a launch that fails inside
+// Claude Code rather than here.
+func TestClaudeRefusesAProviderWithNoAnthropicSurface(t *testing.T) {
+	p := testProvider()
+	p.AnthropicBaseURL = ""
+	c := &Claude{Provider: p, Host: testHost(), LookPath: stubLookPath("/usr/local/bin/claude")}
+	_, err := c.Command(Request{Model: testModel(), APIKey: "sk-or-test"})
+	if err == nil {
+		t.Fatal("Command accepted a provider with no Anthropic endpoint")
+	}
+	if !strings.Contains(err.Error(), p.DisplayName) {
+		t.Errorf("error %q does not name the provider", err)
+	}
+}
+
+// TestClaudeCheckModelIgnoresAnAbsentVendorNamespace: a catalog that does not
+// express one — a local server's "qwen3-coder:30b" — must not make the
+// advisory fire on every model it offers.
+func TestClaudeCheckModelIgnoresAnAbsentVendorNamespace(t *testing.T) {
+	c := &Claude{Provider: testProvider(), Host: testHost()}
+	if err := c.CheckModel(openrouter.Model{ID: "qwen3-coder:30b"}); err != nil {
+		t.Errorf("CheckModel on a model with no vendor namespace = %v, want nil", err)
+	}
+	// A KNOWN non-Anthropic vendor still warns; the exemption is for absence,
+	// not for everything.
+	if err := c.CheckModel(openrouter.Model{ID: "qwen/q3", Provider: "qwen"}); err == nil {
+		t.Error("CheckModel on a known non-anthropic vendor = nil, want an advisory")
 	}
 }
