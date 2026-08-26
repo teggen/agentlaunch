@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // WarningKind identifies an advisory condition so a caller can render it in

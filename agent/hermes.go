@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // hermesMinContext is the context floor hermes enforces at startup: models

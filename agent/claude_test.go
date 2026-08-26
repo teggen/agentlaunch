@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 func stubLookPath(path string) func(string) (string, error) {

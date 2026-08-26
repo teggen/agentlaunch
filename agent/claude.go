@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // Claude launches Claude Code against a model on the bound provider.

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/teggen/openrouter-launch/internal/agent"
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/agent"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // Service resolves launch requests and hands off to agents.

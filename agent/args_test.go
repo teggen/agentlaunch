@@ -106,6 +106,13 @@ func TestRejectFlags(t *testing.T) {
 // TestArgGuardsNameTheHost pins that the guidance text comes from the Host
 // rather than from a string literal. Both guards, and both match kinds each,
 // since the two kinds build their message separately.
+//
+// The positive assertion is the whole check. This test used to pair it with
+// a negative one — that the message did not contain the extracting tool's
+// name — which was load-bearing while that name was still a literal in this
+// package. It is not any more: there is no default host here to regress to,
+// so that assertion could no longer fail for any edit, and a check that
+// cannot fail is worse than no check because it reads like coverage.
 func TestArgGuardsNameTheHost(t *testing.T) {
 	host := Host{Name: "zzz-launch", Marker: "zzz"}
 	errs := []error{
@@ -120,9 +127,6 @@ func TestArgGuardsNameTheHost(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "zzz-launch") {
 			t.Errorf("error %q does not name the host", err)
-		}
-		if strings.Contains(err.Error(), "openrouter-launch") {
-			t.Errorf("error %q still names a hardcoded host", err)
 		}
 	}
 }
@@ -144,7 +148,7 @@ func TestEveryLauncherPassesItsOwnHostToTheArgGuards(t *testing.T) {
 		&OMP{Provider: p, Host: host}, &OpenClaw{Provider: p, Host: host},
 		&Droid{Provider: p, Host: host},
 	}
-	if want := len(openRouterRegistry(t).List()) - 3; len(launchers) != want {
+	if want := len(builtinRegistry(t).List()) - 3; len(launchers) != want {
 		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
 			len(launchers), want)
 	}
@@ -187,9 +191,6 @@ func TestBespokeRefusalsNameTheHost(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "zzz-launch") {
 			t.Errorf("%s: error %q does not name the host", tc.what, err)
-		}
-		if strings.Contains(err.Error(), "openrouter-launch") {
-			t.Errorf("%s: error %q still names a hardcoded host", tc.what, err)
 		}
 	}
 }

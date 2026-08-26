@@ -1,9 +1,6 @@
 package agent
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // testProvider is a synthetic provider for launcher tests. It is deliberately
 // NOT OpenRouter-shaped: a launcher that ignored its provider and kept a
@@ -29,35 +26,43 @@ func testHost() Host {
 	return Host{Name: "acme-launch", Marker: "acme-launch"}
 }
 
-func TestOpenRouterProviderAndHostValidate(t *testing.T) {
-	if err := OpenRouter.Validate(); err != nil {
-		t.Fatalf("OpenRouter.Validate() = %v, want nil", err)
-	}
-	if err := OpenRouterHost.Validate(); err != nil {
-		t.Fatalf("OpenRouterHost.Validate() = %v, want nil", err)
-	}
-	if err := testProvider().Validate(); err != nil {
-		t.Fatalf("testProvider().Validate() = %v, want nil", err)
+// otherProvider is a SECOND synthetic provider, differing from testProvider in
+// every field a launcher reads.
+//
+// It exists for the tests that compare two registries. Bound to the same
+// provider twice, such a test passes no matter how badly a binding leaks
+// between them — it is the DIFFERENCE between the two that carries the claim,
+// so one fixture used twice would be no fixture at all.
+func otherProvider() Provider {
+	return Provider{
+		ID:               "zenith",
+		DisplayName:      "Zenith",
+		BaseURL:          "https://gw.zenith.test/v2",
+		AnthropicBaseURL: "https://gw.zenith.test",
+		APIKeyEnv:        "ZENITH_TOKEN",
+		RequiresAPIKey:   true,
+		KeysURL:          "https://zenith.test/tokens",
+		ModelPrefix:      "zenith/",
+		WireAPI:          "chat",
 	}
 }
 
-// TestOpenRouterBaseURLsDifferByTheVersionSegment is Landmine 1 stated as the
-// relationship it actually is, rather than as two facts about two constants.
-// The OpenAI-compatible root carries a version segment because clients on
-// that protocol append only a method path; the Anthropic root must not,
-// because Claude Code appends its own. Unifying them — which is correct for
-// providers whose two roots really are the same string — yields
-// /api/v1/v1/messages here.
-func TestOpenRouterBaseURLsDifferByTheVersionSegment(t *testing.T) {
-	if !strings.HasSuffix(OpenRouter.BaseURL, "/v1") {
-		t.Errorf("BaseURL = %q, want a /v1 suffix", OpenRouter.BaseURL)
+// otherHost is the synthetic host counterpart to otherProvider.
+func otherHost() Host {
+	return Host{Name: "zenith-launch", Marker: "zenith-launch"}
+}
+
+// TestSyntheticFixturesValidate checks the fixtures themselves, because every
+// launcher test in this package runs against them: an invalid testProvider
+// would make the whole synthetic half of the pair meaningless without ever
+// failing on its own terms. The OpenRouter values these replaced are pinned
+// by the consuming tool, which is the only place that knows them.
+func TestSyntheticFixturesValidate(t *testing.T) {
+	if err := testProvider().Validate(); err != nil {
+		t.Fatalf("testProvider().Validate() = %v, want nil", err)
 	}
-	if strings.HasSuffix(OpenRouter.AnthropicBaseURL, "/v1") {
-		t.Errorf("AnthropicBaseURL = %q must not end in /v1", OpenRouter.AnthropicBaseURL)
-	}
-	if OpenRouter.AnthropicBaseURL+"/v1" != OpenRouter.BaseURL {
-		t.Errorf("the two roots must differ by exactly the version segment: %q + /v1 != %q",
-			OpenRouter.AnthropicBaseURL, OpenRouter.BaseURL)
+	if err := testHost().Validate(); err != nil {
+		t.Fatalf("testHost().Validate() = %v, want nil", err)
 	}
 }
 

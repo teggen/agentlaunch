@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 func TestHermesCommandPathArgsEnv(t *testing.T) {

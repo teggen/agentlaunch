@@ -15,16 +15,22 @@ func (f fakeLauncher) Command(Request) (Command, error) {
 	return Command{Path: "/bin/" + f.name}, nil
 }
 
-// openRouterRegistry is the registry this tool's composition root builds:
-// every builtin bound to OpenRouter. Tests asserting something about the
-// SHIPPED registry — the golden launch surface, how many agents are
-// supported, that "cc" still resolves — must build it from the real binding,
-// since a synthetic one would prove nothing about what users get.
-func openRouterRegistry(t *testing.T) *Registry {
+// builtinRegistry is every builtin bound to the synthetic provider.
+//
+// This module ships recipes, not a bound registry: which provider the eleven
+// are pointed at is the consuming tool's decision, so the fixture that
+// exercises them here must be synthetic. A registry built from a real
+// vendor's descriptor would quietly re-couple these tests to that vendor —
+// and the counts and lookups asserted against it ("cc" resolving, how many
+// entries are supported) are properties of Builtins(), not of any binding.
+// The one claim that IS about a real binding, the exact launch surface each
+// agent receives, is pinned by the consuming tool, which is the only place
+// that knows those values.
+func builtinRegistry(t *testing.T) *Registry {
 	t.Helper()
-	reg, err := NewRegistry(Binding{Provider: OpenRouter, Host: OpenRouterHost}, Builtins())
+	reg, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, Builtins())
 	if err != nil {
-		t.Fatalf("NewRegistry(OpenRouter): %v", err)
+		t.Fatalf("NewRegistry: %v", err)
 	}
 	return reg
 }
@@ -41,7 +47,7 @@ func fakeDefinition(name string, aliases ...string) Definition {
 }
 
 func TestLookupByName(t *testing.T) {
-	spec, err := openRouterRegistry(t).Lookup("claude")
+	spec, err := builtinRegistry(t).Lookup("claude")
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
@@ -51,13 +57,13 @@ func TestLookupByName(t *testing.T) {
 }
 
 func TestLookupIsCaseInsensitive(t *testing.T) {
-	if _, err := openRouterRegistry(t).Lookup("CLAUDE"); err != nil {
+	if _, err := builtinRegistry(t).Lookup("CLAUDE"); err != nil {
 		t.Errorf("Lookup(CLAUDE): %v", err)
 	}
 }
 
 func TestLookupUnknown(t *testing.T) {
-	_, err := openRouterRegistry(t).Lookup("nope")
+	_, err := builtinRegistry(t).Lookup("nope")
 	if !errors.Is(err, ErrUnknownAgent) {
 		t.Errorf("got %v, want ErrUnknownAgent", err)
 	}
@@ -65,7 +71,7 @@ func TestLookupUnknown(t *testing.T) {
 
 func TestListIncludesClaude(t *testing.T) {
 	var found bool
-	for _, s := range openRouterRegistry(t).List() {
+	for _, s := range builtinRegistry(t).List() {
 		if s.Name == "claude" {
 			found = true
 		}
@@ -157,7 +163,7 @@ func TestMustRegistryPanicsOnAMalformedRegistry(t *testing.T) {
 			t.Error("expected a panic for duplicate names")
 		}
 	}()
-	MustRegistry(Binding{Provider: OpenRouter, Host: OpenRouterHost},
+	MustRegistry(Binding{Provider: testProvider(), Host: testHost()},
 		[]Definition{fakeDefinition("a"), fakeDefinition("a")})
 }
 
@@ -176,11 +182,18 @@ func TestNewRegistryRejectsAnInvalidBinding(t *testing.T) {
 // value: two tools, two providers, one set of launch recipes. It fails if
 // Builtins stops threading the Binding — if claude reached for a package
 // default, both registries would report the same endpoint.
+//
+// The two bindings must use DIFFERENT providers. Built from one provider
+// twice, this test still passes with the Binding thrown away entirely, since
+// the two registries would agree for the wrong reason.
 func TestRegistriesAreIndependent(t *testing.T) {
-	live := openRouterRegistry(t)
-	other, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, Builtins())
+	live, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, Builtins())
 	if err != nil {
 		t.Fatalf("NewRegistry(acme): %v", err)
+	}
+	other, err := NewRegistry(Binding{Provider: otherProvider(), Host: otherHost()}, Builtins())
+	if err != nil {
+		t.Fatalf("NewRegistry(zenith): %v", err)
 	}
 
 	liveSpec, err := live.Lookup("claude")
@@ -195,12 +208,11 @@ func TestRegistriesAreIndependent(t *testing.T) {
 		t.Fatal("both registries returned the same *Spec; they share state")
 	}
 
-	got := otherSpec.Launcher.(*Claude).Provider.ID
-	if got != "acme" {
-		t.Errorf("acme registry's claude is bound to %q, want acme", got)
+	if got := otherSpec.Launcher.(*Claude).Provider.ID; got != "zenith" {
+		t.Errorf("zenith registry's claude is bound to %q, want zenith", got)
 	}
-	if got := liveSpec.Launcher.(*Claude).Provider.ID; got != "openrouter" {
-		t.Errorf("OpenRouter registry's claude is bound to %q, want openrouter", got)
+	if got := liveSpec.Launcher.(*Claude).Provider.ID; got != "acme" {
+		t.Errorf("acme registry's claude is bound to %q, want acme", got)
 	}
 }
 
@@ -212,8 +224,8 @@ func TestBindingLookPathReachesEveryLauncher(t *testing.T) {
 
 	var asked []string
 	reg, err := NewRegistry(Binding{
-		Provider: OpenRouter,
-		Host:     OpenRouterHost,
+		Provider: testProvider(),
+		Host:     testHost(),
 		LookPath: func(file string) (string, error) {
 			asked = append(asked, file)
 			return "", errors.New("not found")
@@ -237,7 +249,7 @@ func TestBindingLookPathReachesEveryLauncher(t *testing.T) {
 }
 
 func TestUnsupportedSpecCarriesReason(t *testing.T) {
-	reg, err := NewRegistry(Binding{Provider: OpenRouter, Host: OpenRouterHost}, []Definition{{
+	reg, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, []Definition{{
 		Name:        "copilot",
 		DisplayName: "GitHub Copilot",
 		New:         func(Binding) (Launcher, error) { return nil, Unsupported("talks to GitHub's own backend") },
@@ -271,7 +283,7 @@ func TestUnsupportedSpecCarriesReason(t *testing.T) {
 // registry records, from a genuine construction bug, which must not be
 // silently rendered to users as a reason.
 func TestNewRegistryFailsOnANonProviderError(t *testing.T) {
-	_, err := NewRegistry(Binding{Provider: OpenRouter, Host: OpenRouterHost}, []Definition{{
+	_, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, []Definition{{
 		Name:        "broken",
 		DisplayName: "Broken",
 		New:         func(Binding) (Launcher, error) { return nil, errors.New("boom") },
@@ -303,7 +315,7 @@ func TestNewRegistryRefusesNameDivergence(t *testing.T) {
 			New: func(Binding) (Launcher, error) { return fakeLauncher{name: "b"}, nil },
 		}},
 	} {
-		_, err := NewRegistry(Binding{Provider: OpenRouter, Host: OpenRouterHost}, []Definition{tc.def})
+		_, err := NewRegistry(Binding{Provider: testProvider(), Host: testHost()}, []Definition{tc.def})
 		if err == nil {
 			t.Errorf("%s: NewRegistry accepted a launcher that disagrees with its definition", tc.what)
 		}
@@ -311,7 +323,7 @@ func TestNewRegistryRefusesNameDivergence(t *testing.T) {
 }
 
 func TestNewRegistryRequiresADisplayNameAndANewFunc(t *testing.T) {
-	b := Binding{Provider: OpenRouter, Host: OpenRouterHost}
+	b := Binding{Provider: testProvider(), Host: testHost()}
 	if _, err := NewRegistry(b, []Definition{{Name: "a", New: fakeDefinition("a").New}}); err == nil {
 		t.Error("NewRegistry accepted a definition with no DisplayName")
 	}
@@ -324,7 +336,7 @@ func TestNewRegistryRequiresADisplayNameAndANewFunc(t *testing.T) {
 }
 
 func TestRegistryPhase3Agents(t *testing.T) {
-	reg := openRouterRegistry(t)
+	reg := builtinRegistry(t)
 	for _, name := range []string{"codex", "opencode"} {
 		spec, err := reg.Lookup(name)
 		if err != nil {
@@ -340,7 +352,7 @@ func TestRegistryPhase3Agents(t *testing.T) {
 }
 
 func TestRegistryUnsupportedDesktopApps(t *testing.T) {
-	reg := openRouterRegistry(t)
+	reg := builtinRegistry(t)
 	for _, name := range []string{"chatgpt", "claude-desktop", "hermes-desktop"} {
 		spec, err := reg.Lookup(name)
 		if err != nil {
@@ -361,9 +373,10 @@ func TestRegistryUnsupportedDesktopApps(t *testing.T) {
 	}
 }
 
-// TestStubCommandErrors names a provider that is deliberately NOT OpenRouter,
-// so a placeholder that went back to a hardcoded "OpenRouter" fails here
-// rather than passing against a fixture that merely looks right.
+// TestStubCommandErrors names a provider deliberately unlike the vendor this
+// package was extracted from, so a placeholder that regressed to a hardcoded
+// provider name fails here rather than passing against a fixture that merely
+// looks right.
 func TestStubCommandErrors(t *testing.T) {
 	s := &stub{name: "chatgpt", display: "ChatGPT", provider: "Acme"}
 	_, err := s.Command(Request{Model: testModel(), APIKey: "k"})
@@ -376,7 +389,7 @@ func TestStubCommandErrors(t *testing.T) {
 }
 
 func TestRegistryTier2Agents(t *testing.T) {
-	reg := openRouterRegistry(t)
+	reg := builtinRegistry(t)
 	// Grows by one name per Phase 4a agent task.
 	for _, name := range []string{"pi", "hermes", "qwen", "cline", "kimi", "omp", "openclaw", "droid"} {
 		spec, err := reg.Lookup(name)

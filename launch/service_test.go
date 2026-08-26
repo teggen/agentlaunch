@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // Service.Snapshot is now three lines around an injected loader, so what

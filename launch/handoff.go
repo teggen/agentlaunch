@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/agentlaunch/agent"
 )
 
 // Launch records the selection and then hands off to the agent.

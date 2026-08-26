@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 func TestStaleWarningFreshSnapshotProducesNothing(t *testing.T) {

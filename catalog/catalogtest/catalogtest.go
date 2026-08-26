@@ -15,7 +15,7 @@ package catalogtest
 import (
 	"context"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // Models returns the shared fixture catalog.

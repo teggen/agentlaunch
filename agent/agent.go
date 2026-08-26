@@ -6,7 +6,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // ErrIncompatibleModel reports a pairing an agent does not fully support.

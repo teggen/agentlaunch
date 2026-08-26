@@ -115,10 +115,6 @@ func (p Provider) Validate() error {
 	// segment to ANTHROPIC_BASE_URL, so one here is always wrong — and this
 	// is the check that could not exist while the two URLs lived in packages
 	// that did not import each other.
-	// Landmine 1, machine-checked. Claude Code appends its own version
-	// segment to ANTHROPIC_BASE_URL, so one here is always wrong — and this
-	// is the check that could not exist while the two URLs lived in packages
-	// that did not import each other.
 	if versionSuffixPattern.MatchString(p.AnthropicBaseURL) {
 		return fmt.Errorf("provider %q: AnthropicBaseURL %q ends in a version segment; "+
 			"Claude Code appends its own, so this would request a doubled path (Landmine 1)",

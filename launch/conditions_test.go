@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/agentlaunch/agent"
 )
 
 // The Error() strings below are the CLI's current output verbatim. They are
@@ -110,13 +110,39 @@ func TestCheckSupportedAcceptsSupportedAgent(t *testing.T) {
 	}
 }
 
-// openRouterRegistry is the registry this tool actually ships. The guard
-// below is a claim about every entry in it, so a synthetic binding would not
-// do: the point is that no SHIPPED unsupported agent slips past CheckSupported.
-func openRouterRegistry(t *testing.T) *agent.Registry {
+// testProvider is a synthetic provider for the planner's tests. It duplicates
+// the agent package's fixture rather than sharing it, because that one is
+// unexported — and exporting a test fixture to spare eleven lines would put a
+// synthetic provider in the module's public API, where a consuming tool could
+// bind a registry to it.
+func testProvider() agent.Provider {
+	return agent.Provider{
+		ID:               "acme",
+		DisplayName:      "Acme",
+		BaseURL:          "https://api.acme.test/v9",
+		AnthropicBaseURL: "https://api.acme.test",
+		APIKeyEnv:        "ACME_API_KEY",
+		RequiresAPIKey:   true,
+		KeysURL:          "https://acme.test/keys",
+		ModelPrefix:      "acme/",
+		WireAPI:          "responses",
+	}
+}
+
+// testHost is the synthetic host counterpart to testProvider.
+func testHost() agent.Host {
+	return agent.Host{Name: "acme-launch", Marker: "acme-launch"}
+}
+
+// builtinRegistry is every builtin bound to a synthetic provider. The guard
+// below is a claim about every entry in it: no unsupported agent may slip
+// past CheckSupported. That property holds per binding, and the bindings a
+// consuming tool creates are its own — so the fixture here is synthetic, and
+// the agents refused for a given real provider are the consumer's to pin.
+func builtinRegistry(t *testing.T) *agent.Registry {
 	t.Helper()
 	reg, err := agent.NewRegistry(
-		agent.Binding{Provider: agent.OpenRouter, Host: agent.OpenRouterHost}, agent.Builtins())
+		agent.Binding{Provider: testProvider(), Host: testHost()}, agent.Builtins())
 	if err != nil {
 		t.Fatalf("agent.NewRegistry: %v", err)
 	}
@@ -125,7 +151,7 @@ func openRouterRegistry(t *testing.T) *agent.Registry {
 
 func TestCheckSupportedCoversEveryUnsupportedRegistryEntry(t *testing.T) {
 	sawUnsupported := false
-	for _, spec := range openRouterRegistry(t).List() {
+	for _, spec := range builtinRegistry(t).List() {
 		if spec.Status.Supported {
 			if err := CheckSupported(spec); err != nil {
 				t.Errorf("%q: CheckSupported = %v, want nil", spec.Name, err)

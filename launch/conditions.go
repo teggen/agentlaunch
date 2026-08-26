@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/teggen/openrouter-launch/internal/agent"
+	"github.com/teggen/agentlaunch/agent"
 )
 
 // ErrNoModel reports that no model was selected. It is deliberately bare:

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/teggen/openrouter-launch/internal/agent"
-	"github.com/teggen/openrouter-launch/internal/catalog"
+	"github.com/teggen/agentlaunch/agent"
+	"github.com/teggen/agentlaunch/catalog"
 )
 
 // Request is a launch request.
