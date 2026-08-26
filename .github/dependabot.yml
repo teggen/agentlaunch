@@ -1,0 +1,23 @@
+version: 2
+updates:
+  # No gomod entry, deliberately. This module has no dependencies outside the
+  # standard library, and both boundary tests fail if it ever grows one — so
+  # a gomod ecosystem here would have nothing to update, and a PR from it
+  # would mean something had already gone wrong that Dependabot cannot fix.
+  #
+  # github-actions is a different matter: ci.yml pins every action by commit
+  # SHA, which is what makes the supply chain auditable and what makes those
+  # pins go stale silently. `make lint-workflows` (actionlint) runs in CI and
+  # is what validates whatever Dependabot writes here.
+  #
+  # Targets main because this repository has only main. openrouter-launch
+  # aims its equivalent at develop, since there dependency bumps are
+  # unreleased work and main holds only released code.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: main
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
