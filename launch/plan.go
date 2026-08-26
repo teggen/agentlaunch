@@ -7,7 +7,6 @@ import (
 
 	"github.com/teggen/openrouter-launch/internal/agent"
 	"github.com/teggen/openrouter-launch/internal/catalog"
-	"github.com/teggen/openrouter-launch/internal/config"
 )
 
 // Request is a launch request.
@@ -37,9 +36,9 @@ type Plan struct {
 	Warnings []Warning
 }
 
-// Plan resolves req into a runnable command. It performs IO - catalog fetch,
-// config read - but never touches the terminal: every condition a user must
-// see comes back as a Warning or a typed error.
+// Plan resolves req into a runnable command. It performs IO - through the
+// caller's catalog loader and key resolver - but never touches the terminal:
+// every condition a user must see comes back as a Warning or a typed error.
 //
 // Warnings accumulated before a fatal guard are returned alongside the
 // error, not discarded. Callers must render Plan.Warnings before inspecting
@@ -104,11 +103,7 @@ func (s *Service) Plan(ctx context.Context, req Request) (Plan, error) {
 		}
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		return Plan{Warnings: warnings}, err
-	}
-	apiKey, err := config.ResolveAPIKey(cfg)
+	apiKey, err := s.apiKey()
 	if err != nil {
 		return Plan{Warnings: warnings}, err
 	}

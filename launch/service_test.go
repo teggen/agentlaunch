@@ -2,119 +2,84 @@ package launch
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/teggen/openrouter-launch/internal/catalog"
-	"github.com/teggen/openrouter-launch/internal/catalog/catalogtest"
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
-// erroringCatalog always fails, forcing Snapshot down the stale-cache
-// fallback path.
-type erroringCatalog struct{}
-
-func (erroringCatalog) Models(context.Context) ([]catalog.Model, error) {
-	return nil, errors.New("network down")
-}
-
-// writeCacheFileForTest writes a catalog cache file in the on-disk shape
-// openrouter.Cache expects, without depending on its unexported cacheFile
-// type: only the JSON shape needs to match.
-func writeCacheFileForTest(t *testing.T, path string, fetchedAt time.Time) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	data, err := json.Marshal(struct {
-		Schema    int             `json:"schema"`
-		FetchedAt time.Time       `json:"fetched_at"`
-		Models    []catalog.Model `json:"models"`
-	}{Schema: openrouter.CacheSchema, FetchedAt: fetchedAt, Models: catalogtest.Models()})
-	if err != nil {
-		t.Fatalf("marshal cache file: %v", err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatalf("write cache file: %v", err)
-	}
-}
-
-// cachePathForTest isolates the catalog cache to a temp dir and returns its
-// resolved path.
-func cachePathForTest(t *testing.T) string {
-	t.Helper()
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-	path, err := openrouter.CachePath()
-	if err != nil {
-		t.Fatalf("CachePath: %v", err)
-	}
-	return path
-}
-
-func TestSnapshotServesStaleCacheWithoutFailing(t *testing.T) {
-	path := cachePathForTest(t)
-	writeCacheFileForTest(t, path, time.Now().Add(-48*time.Hour)) // older than DefaultTTL
-
-	svc := &Service{Catalog: erroringCatalog{}}
-	snap, err := svc.Snapshot(context.Background(), false)
-	if err != nil {
-		t.Fatalf("Snapshot: %v", err)
-	}
-	if !snap.Stale {
-		t.Fatal("expected Stale when the refresh fails but a cache exists")
-	}
-	if len(snap.Models) == 0 {
-		t.Error("a stale snapshot must still carry the cached models")
-	}
-}
-
-func TestSnapshotDoesNotConsultSourceWhenFresh(t *testing.T) {
-	path := cachePathForTest(t)
-	writeCacheFileForTest(t, path, time.Now()) // well within DefaultTTL
-
-	// erroringCatalog fails if consulted at all, so a nil error here is the
-	// evidence the fresh cache short-circuited the fetch.
-	svc := &Service{Catalog: erroringCatalog{}}
-	snap, err := svc.Snapshot(context.Background(), false)
-	if err != nil {
-		t.Fatalf("Snapshot: %v", err)
-	}
-	if snap.Stale {
-		t.Error("fresh cache reported as stale")
-	}
-}
+// Service.Snapshot is now three lines around an injected loader, so what
+// these tests can honestly claim has narrowed — and that is the point of A8.
+// Whether a fresh cache short-circuits a fetch, whether a failed refresh
+// falls back to stale data, and whether --refresh bypasses a fresh file are
+// facts about openrouter.Cache; they are tested there directly
+// (TestCacheServesFreshWithoutFetching and its neighbours) and end to end
+// through the real wiring in internal/cli (TestModelsCommandRendersStaleCatalogWarning).
+// What is left here is what this package still decides.
 
 func TestSnapshotWrapsHardFailure(t *testing.T) {
-	cachePathForTest(t) // isolated, and deliberately no cache file written
+	svc := &Service{LoadCatalog: failingCatalog()}
 
-	svc := &Service{Catalog: erroringCatalog{}}
 	_, err := svc.Snapshot(context.Background(), false)
 	if err == nil {
-		t.Fatal("expected an error when the fetch fails with no cache to fall back on")
+		t.Fatal("expected an error when the loader fails")
 	}
 	if !strings.Contains(err.Error(), "load model catalog") {
 		t.Errorf("error should carry context, got: %v", err)
 	}
 }
 
-func TestSnapshotForceRefreshBypassesFreshCache(t *testing.T) {
-	path := cachePathForTest(t)
-	writeCacheFileForTest(t, path, time.Now()) // fresh, would normally short-circuit
-
-	// A fresh cache plus a failing source: with refresh=true the source is
-	// consulted, fails, and the cache is served as stale. Without the
-	// bypass, Stale would be false.
-	svc := &Service{Catalog: erroringCatalog{}}
-	snap, err := svc.Snapshot(context.Background(), true)
-	if err != nil {
-		t.Fatalf("Snapshot: %v", err)
+// TestSnapshotRequiresALoader pins the nil case as a misconfiguration. There
+// is no endpoint this package could default to — that is the whole reason
+// LoadCatalog is a field — so guessing one is not available and a nil
+// dereference is not an acceptable way to report it.
+func TestSnapshotRequiresALoader(t *testing.T) {
+	_, err := (&Service{}).Snapshot(context.Background(), false)
+	if err == nil {
+		t.Fatal("Snapshot with no LoadCatalog returned no error")
 	}
-	if !snap.Stale {
-		t.Error("refresh=true should bypass the fresh cache and consult the source")
+	if !strings.Contains(err.Error(), "Service.LoadCatalog is required") {
+		t.Errorf("error should name the missing field, got: %v", err)
+	}
+}
+
+// TestSnapshotPassesRefreshThrough is what remains of
+// TestSnapshotForceRefreshBypassesFreshCache: the bypass itself belongs to
+// the cache, but the flag reaching it from Request.Refresh is this package's
+// wiring, and a dropped argument would silently pin every user to cached
+// data until the TTL expired.
+func TestSnapshotPassesRefreshThrough(t *testing.T) {
+	for _, want := range []bool{false, true} {
+		var got bool
+		svc := &Service{LoadCatalog: func(_ context.Context, refresh bool) (catalog.Snapshot, error) {
+			got = refresh
+			return freshSnapshot(), nil
+		}}
+		if _, err := svc.Snapshot(context.Background(), want); err != nil {
+			t.Fatalf("Snapshot: %v", err)
+		}
+		if got != want {
+			t.Errorf("loader saw refresh = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestPlanPassesRefreshThrough carries the same claim one level up: Plan is
+// what actually reads Request.Refresh, and --refresh is inert if it stops
+// there.
+func TestPlanPassesRefreshThrough(t *testing.T) {
+	var got bool
+	svc := newTestService(t)
+	svc.LoadCatalog = func(_ context.Context, refresh bool) (catalog.Snapshot, error) {
+		got = refresh
+		return freshSnapshot(), nil
+	}
+	if _, err := svc.Plan(context.Background(), Request{
+		Spec: spec("fake", &fakeLauncher{}), ModelID: "anthropic/claude-opus-4.6", Refresh: true,
+	}); err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if !got {
+		t.Error("Request.Refresh did not reach the catalog loader")
 	}
 }

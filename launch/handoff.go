@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/teggen/openrouter-launch/internal/agent"
-	"github.com/teggen/openrouter-launch/internal/config"
 )
 
 // Launch records the selection and then hands off to the agent.
@@ -23,11 +22,12 @@ import (
 // value for the same reason the ordering matters: on Unix, Launch does not
 // return on success, so a returned warning would never be seen.
 //
-// A config that cannot be read or written costs the user their remembered
-// last selection. That is a convenience, not a precondition, so it warns
-// rather than refusing to start the agent.
+// A settings store that cannot be read or written costs the user their
+// remembered last selection. That is a convenience, not a precondition, so it
+// warns rather than refusing to start the agent — and a Service with no
+// RecordSelection at all simply skips the step.
 func (s *Service) Launch(p Plan, warn func(Warning)) error {
-	if err := recordSelection(p); err != nil && warn != nil {
+	if err := s.recordSelection(p); err != nil && warn != nil {
 		warn(Warning{
 			Kind:    WarnSelectionNotSaved,
 			Message: "could not save last selection: " + err.Error(),
@@ -42,18 +42,15 @@ func (s *Service) Launch(p Plan, warn func(Warning)) error {
 	return s.run(p.Command)
 }
 
-// recordSelection persists the agent and model for the next run. The config
-// is re-read rather than threaded through from Plan: in a TUI a profile may
-// have been added between planning and launching, and that edit must not be
-// clobbered.
-func recordSelection(p Plan) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+// recordSelection persists the agent and model for the next run, through
+// whatever settings store the caller supplied. A Service with none does
+// nothing and reports success: not remembering is a valid configuration,
+// distinct from trying to remember and failing, which warns.
+func (s *Service) recordSelection(p Plan) error {
+	if s.RecordSelection == nil {
+		return nil
 	}
-	cfg.LastAgent = p.Spec.Name
-	cfg.LastModel = p.Model.ID
-	return config.Save(cfg)
+	return s.RecordSelection(p.Spec.Name, p.Model.ID)
 }
 
 // stageFiles writes the plan's launcher-owned files. It refuses any path

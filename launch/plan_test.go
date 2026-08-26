@@ -12,8 +12,6 @@ import (
 	"github.com/teggen/openrouter-launch/internal/agent"
 	"github.com/teggen/openrouter-launch/internal/catalog"
 	"github.com/teggen/openrouter-launch/internal/catalog/catalogtest"
-	"github.com/teggen/openrouter-launch/internal/config"
-	"github.com/teggen/openrouter-launch/internal/openrouter"
 )
 
 // fakeLauncher implements only the required Launcher interface. The types
@@ -75,17 +73,54 @@ func spec(name string, l agent.Launcher) *agent.Spec {
 	return &agent.Spec{Name: name, Launcher: l, Status: agent.Status{Supported: true}}
 }
 
-// newTestService isolates config and cache to a temp dir, serves fixed
-// models, provides an API key, and stubs the handoff.
+// errNoKeyFixture stands in for whatever sentinel a caller's key resolver
+// reports when there is no credential. This package must not know that this
+// tool's is config.ErrNoAPIKey — that is the point of the seam — but the
+// identity has to survive Plan, because the TUI tests it to decide whether to
+// prompt in place or abort the session.
+var errNoKeyFixture = errors.New("no API key configured")
+
+// staticSnapshot is a Service.LoadCatalog that always answers snap.
+func staticSnapshot(snap catalog.Snapshot) func(context.Context, bool) (catalog.Snapshot, error) {
+	return func(context.Context, bool) (catalog.Snapshot, error) { return snap, nil }
+}
+
+// freshSnapshot is the fixture catalog, just fetched.
+func freshSnapshot() catalog.Snapshot {
+	return catalog.Snapshot{Models: catalogtest.Models(), FetchedAt: time.Now()}
+}
+
+// staleSnapshot is the fixture catalog served from a cache after a failed
+// refresh — what openrouter.Cache produces offline, expressed directly rather
+// than reproduced by seeding a real cache file, which this package can no
+// longer do and no longer should.
+func staleSnapshot() catalog.Snapshot {
+	return catalog.Snapshot{
+		Models:    catalogtest.Models(),
+		FetchedAt: time.Now().Add(-48 * time.Hour),
+		Stale:     true,
+		StaleErr:  errors.New("network down"),
+	}
+}
+
+// failingCatalog is a Service.LoadCatalog with nothing to fall back on.
+func failingCatalog() func(context.Context, bool) (catalog.Snapshot, error) {
+	return func(context.Context, bool) (catalog.Snapshot, error) {
+		return catalog.Snapshot{}, errors.New("network down")
+	}
+}
+
+// newTestService serves fixed models, provides an API key, stages into a temp
+// dir, and stubs the handoff. Every one of those is a field now, so this
+// touches no environment variable and no file on disk.
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
 	return &Service{
-		Catalog: catalogtest.NewCatalog(),
-		Run:     func(agent.Command) error { return nil },
+		LoadCatalog: staticSnapshot(freshSnapshot()),
+		APIKey:      func() (string, error) { return "sk-or-test", nil },
+		StageDir:    func() (string, error) { return dir, nil },
+		Run:         func(agent.Command) error { return nil },
 	}
 }
 
@@ -167,12 +202,8 @@ func TestPlanNotInstalledBeatsUnknownModel(t *testing.T) {
 // the generic "load model catalog" failure instead. Fresh machine, no agent
 // installed, offline is exactly when that difference matters.
 func TestPlanNotInstalledBeatsCatalogFailure(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", dir) // deliberately no cache file written
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
-
-	svc := &Service{Catalog: erroringCatalog{}, Run: func(agent.Command) error { return nil }}
+	svc := newTestService(t)
+	svc.LoadCatalog = failingCatalog() // nothing to fall back on
 	_, err := svc.Plan(context.Background(), Request{
 		Spec: spec("fake", &notInstalledLauncher{}), ModelID: "anthropic/claude-opus-4.6",
 	})
@@ -204,16 +235,43 @@ func TestPlanUnknownModelCarriesSuggestions(t *testing.T) {
 	}
 }
 
-func TestPlanMissingAPIKeyFails(t *testing.T) {
+// TestPlanReturnsTheKeyErrorUnwrapped is load-bearing beyond "a missing key
+// fails". internal/tui branches on errors.Is(err, config.ErrNoAPIKey) to open
+// the key prompt in place instead of ending the session, so an error the
+// resolver produced must reach the caller with its identity intact. The
+// message is asserted too: errors.Is alone tolerates a %w wrapper, and that
+// wrapper's text would land in the prompt notice the user reads.
+func TestPlanReturnsTheKeyErrorUnwrapped(t *testing.T) {
 	svc := newTestService(t)
-	t.Setenv("OPENROUTER_API_KEY", "")
+	svc.APIKey = func() (string, error) { return "", errNoKeyFixture }
 
 	_, err := svc.Plan(context.Background(), Request{
 		Spec: spec("fake", &fakeLauncher{}), ModelID: "anthropic/claude-opus-4.6",
 	})
 
-	if !errors.Is(err, config.ErrNoAPIKey) {
-		t.Fatalf("Plan returned %v, want config.ErrNoAPIKey", err)
+	if !errors.Is(err, errNoKeyFixture) {
+		t.Fatalf("Plan returned %v, want the resolver's own error", err)
+	}
+	if err.Error() != errNoKeyFixture.Error() {
+		t.Errorf("Plan decorated the key error: %q, want %q", err, errNoKeyFixture)
+	}
+}
+
+// TestPlanRequiresAKeyResolver pins the nil case as a misconfiguration rather
+// than a silent keyless launch: every agent this tool ships refuses an empty
+// credential, but they refuse it far downstream with their own messages.
+func TestPlanRequiresAKeyResolver(t *testing.T) {
+	svc := newTestService(t)
+	svc.APIKey = nil
+
+	_, err := svc.Plan(context.Background(), Request{
+		Spec: spec("fake", &fakeLauncher{}), ModelID: "anthropic/claude-opus-4.6",
+	})
+	if err == nil {
+		t.Fatal("Plan with no APIKey resolver returned no error")
+	}
+	if !strings.Contains(err.Error(), "Service.APIKey is required") {
+		t.Errorf("error should name the missing field, got: %v", err)
 	}
 }
 
@@ -276,18 +334,9 @@ func TestPlanGenuineCheckModelErrorIsFatal(t *testing.T) {
 }
 
 func TestPlanStaleCatalogWarningPrecedesCompatibilityWarning(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	svc := newTestService(t)
+	svc.LoadCatalog = staticSnapshot(staleSnapshot())
 
-	path, err := openrouter.CachePath()
-	if err != nil {
-		t.Fatalf("CachePath: %v", err)
-	}
-	writeCacheFileForTest(t, path, time.Now().Add(-48*time.Hour))
-
-	svc := &Service{Catalog: erroringCatalog{}, Run: func(agent.Command) error { return nil }}
 	p, err := svc.Plan(context.Background(), Request{
 		Spec: spec("fake", &incompatibleLauncher{}), ModelID: "qwen/qwen3-coder:free",
 	})
@@ -314,18 +363,9 @@ func TestPlanStaleCatalogWarningPrecedesCompatibilityWarning(t *testing.T) {
 // genuinely absent - so the staleness notice is the explanation for the
 // unknown-model error, not noise beside it.
 func TestPlanKeepsStaleWarningWhenALaterGuardFails(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", dir)
-	t.Setenv("XDG_CONFIG_HOME", dir)
-	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	svc := newTestService(t)
+	svc.LoadCatalog = staticSnapshot(staleSnapshot())
 
-	path, err := openrouter.CachePath()
-	if err != nil {
-		t.Fatalf("CachePath: %v", err)
-	}
-	writeCacheFileForTest(t, path, time.Now().Add(-48*time.Hour))
-
-	svc := &Service{Catalog: erroringCatalog{}, Run: func(agent.Command) error { return nil }}
 	p, err := svc.Plan(context.Background(), Request{
 		Spec: spec("fake", &fakeLauncher{}), ModelID: "no/such-model",
 	})
@@ -477,15 +517,9 @@ func TestPlanCarriesStagedFilesAndAgentRequest(t *testing.T) {
 // stageFiles the same thing, so the path a launcher builds and the boundary
 // the write is checked against come from one source.
 func TestPlanSuppliesTheStageDirToTheLauncher(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
-
 	want := t.TempDir()
-	svc := &Service{
-		Catalog:  catalogtest.NewCatalog(),
-		StageDir: func() (string, error) { return want, nil },
-	}
+	svc := newTestService(t)
+	svc.StageDir = func() (string, error) { return want, nil }
 	// A fake launcher rather than a real spec: Landmine 8 — the isolated run
 	// has no claude on PATH, so a real one would be refused by the install
 	// guard long before the stage dir is set.
@@ -498,5 +532,24 @@ func TestPlanSuppliesTheStageDirToTheLauncher(t *testing.T) {
 	}
 	if plan.AgentRequest.StageDir != want {
 		t.Errorf("AgentRequest.StageDir = %q, want %q", plan.AgentRequest.StageDir, want)
+	}
+}
+
+// TestPlanRequiresAStageDir is the same guard one step earlier. Plan asks for
+// the directory unconditionally, because it is what a launcher computes its
+// staged paths against — so a missing one has to stop the plan rather than
+// reach a launcher as an empty string it may or may not check.
+func TestPlanRequiresAStageDir(t *testing.T) {
+	svc := newTestService(t)
+	svc.StageDir = nil
+
+	_, err := svc.Plan(context.Background(), Request{
+		Spec: spec("fake", &fakeLauncher{}), ModelID: "anthropic/claude-opus-4.6",
+	})
+	if err == nil {
+		t.Fatal("Plan with no StageDir returned no error")
+	}
+	if !strings.Contains(err.Error(), "Service.StageDir is required") {
+		t.Errorf("error should name the missing field, got: %v", err)
 	}
 }

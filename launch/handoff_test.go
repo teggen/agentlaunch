@@ -12,7 +12,6 @@ import (
 
 	"github.com/teggen/openrouter-launch/internal/agent"
 	"github.com/teggen/openrouter-launch/internal/catalog"
-	"github.com/teggen/openrouter-launch/internal/config"
 )
 
 // testPlan is a minimal already-resolved Plan.
@@ -24,17 +23,37 @@ func testPlan() Plan {
 	}
 }
 
-// blockConfigWrites points XDG_CONFIG_HOME at a regular file, so the config
-// directory cannot be created. config.Load fails first (ENOTDIR) and
-// returns, so the selection is never recorded and config.Save is never
-// reached in these tests.
-func blockConfigWrites(t *testing.T) {
-	t.Helper()
-	blocker := filepath.Join(t.TempDir(), "not-a-dir")
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+// recorder is an in-memory stand-in for whatever settings store the caller
+// wires Service.RecordSelection to. These tests are about Launch's ORDER and
+// its failure handling, not about any particular store, and this package no
+// longer knows that this tool's store is a JSON file under XDG_CONFIG_HOME.
+type recorder struct {
+	agent, model string
+	calls        int
+	err          error
+}
+
+func (r *recorder) record(agentName, modelID string) error {
+	r.calls++
+	if r.err != nil {
+		return r.err
 	}
-	t.Setenv("XDG_CONFIG_HOME", blocker)
+	r.agent, r.model = agentName, modelID
+	return nil
+}
+
+// stageRoot returns a staging directory that does NOT yet exist, so the mode
+// stageFiles creates it with stays observable. It is the shape config.Dir
+// returns — a named subdirectory of a parent that already exists — which is
+// what these tests used before Service took the directory as a field.
+func stageRoot(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "openrouter-launch")
+}
+
+// staticDir is a Service.StageDir that always answers dir.
+func staticDir(dir string) func() (string, error) {
+	return func() (string, error) { return dir, nil }
 }
 
 // The ordering here is the whole reason save and handoff live in one
@@ -43,18 +62,16 @@ func blockConfigWrites(t *testing.T) {
 // normally, so the bug would be invisible to any end-state assertion. This
 // inspects the config from inside the handoff itself.
 func TestLaunchSavesSelectionBeforeHandoff(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
+	rec := &recorder{}
 	var savedBeforeHandoff bool
-	svc := &Service{Run: func(agent.Command) error {
-		cfg, err := config.Load()
-		if err != nil {
-			t.Fatalf("config.Load inside the handoff: %v", err)
-		}
-		savedBeforeHandoff = cfg.LastAgent == "fake" &&
-			cfg.LastModel == "anthropic/claude-opus-4.6"
-		return nil
-	}}
+	svc := &Service{
+		RecordSelection: rec.record,
+		Run: func(agent.Command) error {
+			savedBeforeHandoff = rec.agent == "fake" &&
+				rec.model == "anthropic/claude-opus-4.6"
+			return nil
+		},
+	}
 
 	if err := svc.Launch(testPlan(), nil); err != nil {
 		t.Fatalf("Launch: %v", err)
@@ -65,31 +82,49 @@ func TestLaunchSavesSelectionBeforeHandoff(t *testing.T) {
 }
 
 func TestLaunchRecordsAgentAndModel(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	svc := &Service{Run: func(agent.Command) error { return nil }}
+	rec := &recorder{}
+	svc := &Service{RecordSelection: rec.record, Run: func(agent.Command) error { return nil }}
 	if err := svc.Launch(testPlan(), nil); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
 
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("config.Load: %v", err)
+	if rec.agent != "fake" {
+		t.Errorf("recorded agent = %q", rec.agent)
 	}
-	if cfg.LastAgent != "fake" {
-		t.Errorf("LastAgent = %q", cfg.LastAgent)
+	if rec.model != "anthropic/claude-opus-4.6" {
+		t.Errorf("recorded model = %q", rec.model)
 	}
-	if cfg.LastModel != "anthropic/claude-opus-4.6" {
-		t.Errorf("LastModel = %q", cfg.LastModel)
+}
+
+// TestLaunchWithNoRecorderStillHandsOff pins the nil case as a supported
+// configuration rather than an oversight: a tool that does not remember the
+// last selection leaves RecordSelection nil, and that is silent, not a
+// warning — distinct from trying to record and failing, below.
+func TestLaunchWithNoRecorderStillHandsOff(t *testing.T) {
+	var handedOff bool
+	var got []Warning
+	svc := &Service{Run: func(agent.Command) error { handedOff = true; return nil }}
+
+	if err := svc.Launch(testPlan(), func(w Warning) { got = append(got, w) }); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	if !handedOff {
+		t.Error("a Service with no RecordSelection must still hand off")
+	}
+	if len(got) != 0 {
+		t.Errorf("warnings = %+v, want none: not recording is not a failure to record", got)
 	}
 }
 
 func TestLaunchWarnsButProceedsWhenSelectionCannotBeSaved(t *testing.T) {
-	blockConfigWrites(t)
+	rec := &recorder{err: errors.New("settings are read-only")}
 
 	var handedOff bool
 	var got []Warning
-	svc := &Service{Run: func(agent.Command) error { handedOff = true; return nil }}
+	svc := &Service{
+		RecordSelection: rec.record,
+		Run:             func(agent.Command) error { handedOff = true; return nil },
+	}
 
 	err := svc.Launch(testPlan(), func(w Warning) { got = append(got, w) })
 	if err != nil {
@@ -115,19 +150,19 @@ func TestLaunchWarnsButProceedsWhenSelectionCannotBeSaved(t *testing.T) {
 // warn is documented as optional. The crash case is a save failure with no
 // callback to report it to, so that is what this exercises.
 func TestLaunchNilWarnIsSafeOnSaveFailure(t *testing.T) {
-	blockConfigWrites(t)
+	rec := &recorder{err: errors.New("settings are read-only")}
 
-	svc := &Service{Run: func(agent.Command) error { return nil }}
+	svc := &Service{RecordSelection: rec.record, Run: func(agent.Command) error { return nil }}
 	if err := svc.Launch(testPlan(), nil); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
 }
 
 func TestLaunchDoesNotWarnOnSuccess(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	rec := &recorder{}
 
 	var got []Warning
-	svc := &Service{Run: func(agent.Command) error { return nil }}
+	svc := &Service{RecordSelection: rec.record, Run: func(agent.Command) error { return nil }}
 	if err := svc.Launch(testPlan(), func(w Warning) { got = append(got, w) }); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
@@ -137,8 +172,6 @@ func TestLaunchDoesNotWarnOnSuccess(t *testing.T) {
 }
 
 func TestLaunchHandsOffTheBuiltCommandUnchanged(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
 	var got agent.Command
 	svc := &Service{Run: func(c agent.Command) error { got = c; return nil }}
 	p := testPlan()
@@ -152,8 +185,6 @@ func TestLaunchHandsOffTheBuiltCommandUnchanged(t *testing.T) {
 }
 
 func TestLaunchPropagatesHandoffError(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
 	want := errors.New("exec failed")
 	svc := &Service{Run: func(agent.Command) error { return want }}
 
@@ -163,22 +194,20 @@ func TestLaunchPropagatesHandoffError(t *testing.T) {
 }
 
 func TestLaunchStagesFilesBeforeRun(t *testing.T) {
-	cfgDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", cfgDir)
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := stageRoot(t)
 	staged := agent.StagedFile{
 		Path:     filepath.Join(dir, "openclaw.json"),
 		Contents: []byte(`{"agents":{}}`),
 		Mode:     0o644,
 	}
 	var contentAtRun []byte
-	svc := &Service{Run: func(agent.Command) error {
-		contentAtRun, _ = os.ReadFile(staged.Path)
-		return nil
-	}}
+	svc := &Service{
+		StageDir: staticDir(dir),
+		Run: func(agent.Command) error {
+			contentAtRun, _ = os.ReadFile(staged.Path)
+			return nil
+		},
+	}
 	p := Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
 		Command: agent.Command{Path: "/bin/true"},
@@ -219,12 +248,8 @@ func TestLaunchStagesIntoAPrivateDir(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("file modes are not meaningful on Windows")
 	}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{Run: func(agent.Command) error { return nil }}
+	dir := stageRoot(t)
+	svc := &Service{StageDir: staticDir(dir), Run: func(agent.Command) error { return nil }}
 	p := Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
 		Command: agent.Command{Path: "/bin/true"},
@@ -278,11 +303,7 @@ func TestLaunchStagedFileModeIsAppliedOverAnExistingFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-			dir, err := config.Dir()
-			if err != nil {
-				t.Fatal(err)
-			}
+			dir := stageRoot(t)
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -297,7 +318,7 @@ func TestLaunchStagedFileModeIsAppliedOverAnExistingFile(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			svc := &Service{Run: func(agent.Command) error { return nil }}
+			svc := &Service{StageDir: staticDir(dir), Run: func(agent.Command) error { return nil }}
 			p := Plan{
 				Spec:    spec("fake", &fakeLauncher{}),
 				Command: agent.Command{Path: "/bin/true"},
@@ -334,12 +355,8 @@ func TestLaunchStagedFileModeIsAppliedOverAnExistingFile(t *testing.T) {
 // beside it. Our config dir is also the openclaw config dir for the session,
 // so a stray .openclaw-*.json is a file the agent may try to read.
 func TestLaunchStagedFileLeavesNoTempBehind(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	svc := &Service{Run: func(agent.Command) error { return nil }}
+	dir := stageRoot(t)
+	svc := &Service{StageDir: staticDir(dir), Run: func(agent.Command) error { return nil }}
 	p := Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
 		Command: agent.Command{Path: "/bin/true"},
@@ -357,9 +374,10 @@ func TestLaunchStagedFileLeavesNoTempBehind(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Asserting on the dot prefix rather than on an exact directory listing:
-	// Launch also writes config.json here via recordSelection, and pinning the
-	// full listing would make this test fail for that unrelated reason. Staged
-	// temp files are dot-prefixed, the same convention writeClineProvidersFile
+	// in production this is also the tool's own config dir, so config.json
+	// and anything else it keeps sits here too, and pinning the full listing
+	// would make this test fail for those unrelated reasons. Staged temp
+	// files are dot-prefixed, the same convention writeClineProvidersFile
 	// uses.
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") {
@@ -373,10 +391,10 @@ func TestLaunchStagedFileLeavesNoTempBehind(t *testing.T) {
 
 func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	// Case 1: unrelated directory (no shared prefix)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := stageRoot(t)
 	outside := filepath.Join(t.TempDir(), "evil.json")
 	ran := false
-	svc := &Service{Run: func(agent.Command) error { ran = true; return nil }}
+	svc := &Service{StageDir: staticDir(dir), Run: func(agent.Command) error { ran = true; return nil }}
 	p := Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
 		Command: agent.Command{Path: "/bin/true"},
@@ -394,11 +412,7 @@ func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	}
 
 	// Case 2: sibling directory sharing the string prefix (distinguishes filepath.Rel from naive strings.HasPrefix)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // fresh temp dir for this case
-	dir, err := config.Dir()
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir = stageRoot(t) // fresh temp dir for this case
 	// Create a sibling dir that shares the string prefix but is not a subdirectory
 	// e.g., dir=/tmp/xyz/cfg → sibling=/tmp/xyz/cfg-evil
 	siblingDir := dir + "-evil"
@@ -408,7 +422,7 @@ func TestLaunchRefusesStagedFileOutsideConfigDir(t *testing.T) {
 	siblingPath := filepath.Join(siblingDir, "staged.json")
 
 	ran = false
-	svc = &Service{Run: func(agent.Command) error { ran = true; return nil }}
+	svc = &Service{StageDir: staticDir(dir), Run: func(agent.Command) error { ran = true; return nil }}
 	p = Plan{
 		Spec:    spec("fake", &fakeLauncher{}),
 		Command: agent.Command{Path: "/bin/true"},
@@ -520,5 +534,40 @@ func TestLaunchConfigWriterRestoreErrorPreservesRunError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "restore") {
 		t.Errorf("error text = %q, want to contain 'restore' (the restore failure must not be swallowed)", err.Error())
+	}
+}
+
+// TestLaunchRefusesToStageWithNoStageDir pins the refusal rather than a
+// fallback. An empty directory is not a harmless default: filepath.Join("",
+// "openclaw.json") is a path in the WORKING directory, so a Service that
+// guessed would put write site #3 wherever the user happened to be — outside
+// the sanctioned dir, which is Landmine 6 — while every path assertion in
+// this file still passed.
+func TestLaunchRefusesToStageWithNoStageDir(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "openclaw.json")
+	ran := false
+	svc := &Service{Run: func(agent.Command) error { ran = true; return nil }}
+	p := Plan{
+		Spec:    spec("fake", &fakeLauncher{}),
+		Command: agent.Command{Path: "/bin/true"},
+		Staged:  []agent.StagedFile{{Path: target, Contents: []byte("x"), Mode: 0o600}},
+	}
+
+	err := svc.Launch(p, nil)
+	if err == nil {
+		t.Fatal("Launch staged a file with no StageDir configured")
+	}
+	// The whole sentence, not just the field name: t.TempDir() puts the test's
+	// own name in the path, so a substring check for "StageDir" alone is
+	// satisfied by the staged path quoted in ANY staging error — including the
+	// "outside the launcher config dir" one a fallback to "" would produce.
+	if !strings.Contains(err.Error(), "Service.StageDir is required") {
+		t.Errorf("error should name the missing field, got: %v", err)
+	}
+	if ran {
+		t.Error("the handoff happened despite the staging failure")
+	}
+	if _, statErr := os.Stat(target); statErr == nil {
+		t.Error("the staged file was written anyway")
 	}
 }
