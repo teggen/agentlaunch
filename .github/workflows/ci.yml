@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Keyed on the PR's head ref when there is one, falling back to the short
+  # ref name — NOT `github.ref`. Both `push` and `pull_request` fire for a
+  # same-repo PR branch, and on `push` the fallback must produce the same
+  # string `github.event.pull_request.head.ref` carries (`x`, not
+  # `refs/heads/x`) or the two runs land in different groups and neither
+  # cancels the other. The reverse substitution does not work either: on a
+  # `pull_request` event `github.ref_name` is `<pr_number>/merge`.
+  group: ci-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: quality
+    runs-on: ubuntu-latest
+    # Explicit, not GitHub's 360-minute default: a test that fails by hanging
+    # would otherwise burn a run for hours before anyone notices.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # `check-latest: true` is LOAD-BEARING on every setup-go step here.
+      # Without it, setup-go uses whatever Go the runner image has cached if
+      # it satisfies the directive — and a bare `1.25` is satisfied by ANY
+      # 1.25.x, including one older than the fix for a published stdlib
+      # vulnerability. The minor-only directive buys nothing if the action
+      # never looks past the cache; openrouter-launch went red on unchanged
+      # code exactly this way on 2026-08-15.
+      #
+      # `cache-dependency-path: go.mod` because this module has NO
+      # dependencies and therefore no go.sum. setup-go's cache defaults to
+      # hashing go.sum and fails the step when it cannot find one, so a
+      # zero-dependency module has to point it at go.mod explicitly.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.mod
+      - run: make fmt-check
+      - run: make vet
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.12.2
+      # The action lints the default GOOS only, so every build-tagged file for
+      # another platform is invisible to it. That is not a theoretical gap in
+      # THIS module: agent/exec_windows.go is one of the two files the noctx
+      # exclusion in .golangci.yml covers (Landmine 24), and on Linux the
+      # linter sees only one of them. The action puts golangci-lint on PATH,
+      # so this reuses the binary it installed.
+      - name: Lint the build-tagged files the default GOOS never sees
+        run: make lint-cross
+      - name: Install actionlint
+        run: make tools-actionlint
+      - name: Validate GitHub Actions workflow YAML
+        run: make lint-workflows
+      - run: make tidy-check
+      - run: make cross
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.mod
+      # Built with THIS job's toolchain on purpose. Prebuilt analysis
+      # binaries abort on toolchain skew ("file requires newer Go version").
+      - name: Install pinned tools
+        run: make tools
+      # govulncheck is blocking, gosec advisory — the same split as
+      # openrouter-launch. With no third-party dependencies, what govulncheck
+      # has to say here is about the standard library, which is precisely the
+      # class of finding that went red on unchanged code before.
+      #
+      # DELIBERATELY NOT MIRRORED from openrouter-launch: the gosec SARIF
+      # chain (report upload to the Security tab, plus
+      # .github/scripts/check-gosec-analysis.sh, the guard that catches gosec
+      # exiting 0 having analysed nothing). That guard is pinned over there by
+      # gosecguard_test.go against gosec's exact log wording, and porting it
+      # is a change worth making on its own terms rather than folded into an
+      # extraction. Until it lands, this job's gosec half is advisory-only in
+      # the weaker sense: a gosec that analysed nothing looks the same as a
+      # clean one.
+      - name: govulncheck, go mod verify, advisory gosec
+        run: make security
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.mod
+      # The three-OS matrix is not ceremony for a library. exec_windows.go is
+      # Windows-only source, findPath's candidate lists are GOOS-selected, and
+      # Landmine 8's home-directory helper redirects USERPROFILE precisely
+      # because os.UserHomeDir does not read HOME on Windows — where the
+      # failure mode was Droid.Apply writing into the developer's real
+      # profile on every test run.
+      #
+      # Called directly rather than through make: GNU make is not worth
+      # assuming on the Windows runner for a single command.
+      - name: Test
+        run: go test ./... -count=1
+      # Across ./..., not one package: RunWait's goroutine and its
+      # two-channel select are what the race detector has to find, and they
+      # live in this module now.
+      - name: Race detector
+        if: matrix.os == 'ubuntu-latest'
+        run: make test-race
+      - name: Coverage
+        if: matrix.os == 'ubuntu-latest'
+        # `shell: bash` is LOAD-BEARING and must not be dropped as noise. With
+        # no `shell:` key, GitHub runs `bash -e {0}` — WITHOUT pipefail — so
+        # `make cover-check | tee` would exit with tee's status, i.e. 0, and
+        # the 80% floor would never fail a run. The "below the floor" message
+        # would appear in the job summary while the step, job and run all went
+        # green.
+        shell: bash
+        run: |
+          echo '## Coverage' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          # One make invocation, not two: separate calls re-run the `cover`
+          # prerequisite and with it the whole suite a second time.
+          make cover-check cover-html 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: coverage-html
+          path: coverage.html
+
+  machine-independence:
+    # Landmine 8. Its own job, not a step inside `test`: the launchers'
+    # findPath home-directory fallbacks live in THIS module, so this is now
+    # the repository where a test that quietly depends on a real install gets
+    # caught. A green tick next to the name is the point.
+    name: machine-independence (Landmine 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+          cache: true
+          cache-dependency-path: go.mod
+      - run: make test-isolated

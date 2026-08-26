@@ -1,0 +1,13 @@
+/coverage.out
+/coverage.html
+/gosec.sarif
+/gosec.log
+
+# The workspace that lets this module and its consuming tools be edited
+# together lives at ~/projects/go.work, outside every repository. These two
+# entries are a safety net for a workspace created inside the checkout by
+# mistake: a committed go.work makes CI resolve sibling modules from a
+# developer's disk instead of the proxy, which is the same failure a
+# committed `replace` directive causes — green locally, red or wrong in CI.
+/go.work
+/go.work.sum

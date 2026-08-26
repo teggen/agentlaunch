@@ -1,0 +1,96 @@
+# golangci-lint v2 schema. This file MUST stay on version "2":
+# golangci-lint-action v9 (used by .github/workflows/ci.yml) refuses v1
+# outright — "golangci-lint v1 is not supported by golangci-lint-action >= v7".
+# If a locally installed v1 binary rejects this file, upgrade the binary
+# (make tools). Downgrading the config breaks CI instead.
+#
+# Kept deliberately in step with openrouter-launch's .golangci.yml, minus the
+# exclusions whose paths do not exist here. These packages were held to that
+# gate before the extraction; a module that quietly lints less would let a
+# finding land here that the same code could not have landed there.
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  # "standard" is errcheck, govet, ineffassign, staticcheck, unused.
+  # In v2, gosimple was merged into staticcheck — do not try to enable it.
+  default: standard
+  enable:
+    - misspell
+    - revive
+    - bodyclose
+    - noctx
+  exclusions:
+    rules:
+      # Test helpers routinely ignore errors from cleanup and fixture setup
+      # where the failure mode is the test failing anyway.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+      # revive's `exported` rule polices comment FORM ("comment on exported X
+      # should be of the form ..."), which is prose style, not a defect class.
+      # The gate is for bugs.
+      #
+      # Suppress it HERE, and never via `linters.settings.revive.rules`: that
+      # block REPLACES revive's rule set rather than amending it, so naming a
+      # single disabled rule there silently turns revive off completely.
+      - linters:
+          - revive
+        text: '^exported:'
+
+      # Unused parameters in test helpers whose signatures are fixed by the
+      # interface they stub.
+      - path: _test\.go
+        linters:
+          - revive
+        text: '^unused-parameter:'
+
+      # Landmine 24: a ConfigWriter agent (droid) deliberately does NOT take
+      # the syscall.Exec handoff — RunWait forks and waits so restore() can
+      # run afterwards. The child is an interactive agent session that lasts
+      # as long as the user wants it to, and its cancellation path is the
+      # documented SIGINT/SIGTERM forwarding a few lines below, not a
+      # context. Switching to CommandContext would add a cancellation
+      # mechanism that could kill a live session and would change the
+      # fork-and-wait contract the Landmine pins.
+      #
+      # Covers exec_windows.go too: it is the Windows substitute for the
+      # syscall.Exec handoff and earns the same rationale. Note that lint is
+      # GOOS-SENSITIVE — a build-tagged file is invisible to the gate on
+      # every other platform, so `make lint` alone never sees that site.
+      # `make lint-cross` runs the linter under GOOS=windows and GOOS=darwin
+      # and is part of `make ci` for exactly this reason.
+      #
+      # The path lost its internal/ prefix in the extraction. That rename is
+      # not cosmetic: a stale `internal/agent/...` pattern here matches
+      # nothing, silently re-enabling a noctx failure on the one site this
+      # rule exists to protect.
+      - path: agent/exec_(wait|windows)\.go
+        linters:
+          - noctx
+        text: os/exec\.Command must not be called
+
+      # QF1001 is a style quickfix, not a defect check. Rewriting an
+      # assertion's boolean structure to satisfy a style check is a bad trade
+      # in a tree whose stated recurring defect is tests that pass for the
+      # wrong reason. Scoped to tests and to this one check ID.
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: QF1001
+
+formatters:
+  # v2 moved gofmt/goimports/gofumpt out of linters into their own section.
+  enable:
+    - gofmt
+
+issues:
+  # Both default to a nonzero cap (max-issues-per-linter 50, max-same-issues
+  # 3) which SILENTLY TRUNCATES the report. A gate that hides its 4th repeat
+  # of a finding is not a gate. 0 means unlimited; this can only ever surface
+  # more, never fewer, so it cannot mask a regression.
+  max-issues-per-linter: 0
+  max-same-issues: 0
