@@ -439,7 +439,7 @@ func TestPlanShadowedCredentialYieldsConfirmableWarning(t *testing.T) {
 	// Copy the Request literal from
 	// TestPlanIncompatibleModelYieldsConfirmableWarning so the fake catalog
 	// resolves the model; only the Spec differs.
-	sh := &shadowingLauncher{msg: "fake has a stored OpenRouter credential that outranks the launched key"}
+	sh := &shadowingLauncher{msg: "fake has a stored Acme credential that outranks the launched key"}
 	p, err := svc.Plan(context.Background(), Request{
 		Spec:    spec("fake", sh),
 		ModelID: "qwen/qwen3-coder:free",
