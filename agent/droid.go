@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // Droid launches Factory's droid via the ConfigWriter escape hatch — the
@@ -276,4 +277,66 @@ func (d *Droid) CheckInstalled() bool {
 // Droid requires a Factory account even on the BYOK-only tier.
 func (d *Droid) InstallHint() string {
 	return "Install droid: curl -fsSL https://app.factory.ai/cli | sh (requires a Factory account, even for BYOK)"
+}
+
+// Restore removes this tool's marker-owned entries from droid's settings out
+// of band, for when the launch that wrote them never ran its own restore.
+//
+// It is deliberately weaker than Apply's closure. The closure captured the
+// user's prior `model` value; nothing on disk records it. So Restore clears
+// `model` only when it still names one of OUR entries — a dangling
+// `custom:<marker>-N` reference is worse than an absent key, and clearing a
+// value we did not write would be worse still.
+func (d *Droid) Restore() error {
+	path, err := droidSettingsFile()
+	if err != nil {
+		return err
+	}
+	settings, existed, err := readDroidSettingsFile(path)
+	if err != nil {
+		return err
+	}
+	if !existed {
+		// Nothing was ever written, or the user removed it. Idempotent.
+		return nil
+	}
+
+	kept, err := foreignDroidModels(path, settings, d.Host.Marker)
+	if err != nil {
+		return err
+	}
+
+	raw, hadModels := settings["customModels"]
+	models, _ := raw.([]any)
+	changed := hadModels && len(models) != len(kept)
+
+	if hadModels {
+		if len(kept) == 0 {
+			delete(settings, "customModels")
+		} else {
+			settings["customModels"] = kept
+		}
+	}
+
+	// Only a selection naming one of our entries is ours to clear.
+	if model, ok := settings["model"].(string); ok &&
+		strings.HasPrefix(model, "custom:"+d.Host.Marker+"-") {
+		delete(settings, "model")
+		changed = true
+	}
+
+	if !changed {
+		// Never rewrite a file we had no reason to touch.
+		return nil
+	}
+	return writeDroidSettingsFile(path, settings)
+}
+
+// RestoreHint names the file Restore touches.
+func (d *Droid) RestoreHint() string {
+	path, err := droidSettingsFile()
+	if err != nil {
+		return "droid's settings.local.json"
+	}
+	return "removes " + d.Host.Marker + " entries from " + path
 }

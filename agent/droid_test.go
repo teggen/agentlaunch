@@ -452,3 +452,95 @@ func TestDroidApplyAcceptsNullCustomModels(t *testing.T) {
 		t.Errorf("restore: model = %v, want prior custom:theirs", m["model"])
 	}
 }
+
+func TestDroidRestoreRemovesOnlyMarkerEntries(t *testing.T) {
+	home := testHome(t)
+	path := filepath.Join(home, ".factory", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	settings := map[string]any{
+		"customModels": []any{
+			map[string]any{"displayName": "someone-else", "baseUrl": "https://example.test"},
+			map[string]any{"displayName": "acme-launch", "baseUrl": "https://acme.test/v9"},
+		},
+		"model":     "custom:acme-launch-1",
+		"untouched": "keep me",
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{Provider: testProvider(), Host: testHost()}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("Restore() = %v, want nil", err)
+	}
+
+	got, _, err := readDroidSettingsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, _ := got["customModels"].([]any)
+	if len(models) != 1 {
+		t.Fatalf("customModels = %v, want exactly the foreign entry", models)
+	}
+	entry, _ := models[0].(map[string]any)
+	if entry["displayName"] != "someone-else" {
+		t.Errorf("surviving entry = %v, want the foreign one", entry)
+	}
+	if _, present := got["model"]; present {
+		t.Errorf("model = %v, want it cleared: it pointed at an entry we removed", got["model"])
+	}
+	if got["untouched"] != "keep me" {
+		t.Errorf("untouched = %v, want it preserved", got["untouched"])
+	}
+}
+
+func TestDroidRestoreKeepsForeignModelSelection(t *testing.T) {
+	home := testHome(t)
+	path := filepath.Join(home, ".factory", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	settings := map[string]any{
+		"customModels": []any{
+			map[string]any{"displayName": "acme-launch"},
+		},
+		"model": "custom:someone-else-0",
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{Provider: testProvider(), Host: testHost()}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("Restore() = %v, want nil", err)
+	}
+
+	got, _, err := readDroidSettingsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["model"] != "custom:someone-else-0" {
+		t.Errorf("model = %v, want the user's own selection left alone", got["model"])
+	}
+}
+
+func TestDroidRestoreIsIdempotentWithNoSettingsFile(t *testing.T) {
+	testHome(t)
+	d := &Droid{Provider: testProvider(), Host: testHost()}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("Restore() with no settings file = %v, want nil", err)
+	}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("second Restore() = %v, want nil", err)
+	}
+}

@@ -78,6 +78,32 @@ type ConfigWriter interface {
 	Apply(Request) (restore func() error, err error)
 }
 
+// Restorable undoes this tool's writes to an agent's own config OUT OF BAND —
+// without having applied anything in this process.
+//
+// ConfigWriter's restore is a closure captured at Apply time, which is what
+// makes it exact and also what makes it unavailable once the launch that
+// created it is gone: a process killed with SIGKILL, or a desktop app that
+// outlives the command that started it, leaves the agent configured with no
+// closure left to call. Restorable is the answer to that, and it reconstructs
+// what to undo from the file plus Host.Marker rather than from captured state.
+//
+// It is therefore allowed to be WEAKER than the matching closure, and droid is
+// the worked example: the closure restores the user's prior model selection,
+// while Restore can only remove a selection that still points at one of ours,
+// because nothing on disk records what was there before.
+//
+// Implementations MUST be idempotent — restoring an agent that was never
+// configured is a success, not an error, since `restore --all` walks every
+// implementation and most will have nothing to do — and MUST NOT remove
+// configuration this tool did not write.
+type Restorable interface {
+	Restore() error
+	// RestoreHint names, in one line, what Restore touches. It is shown by
+	// the restore command so a user can see which file changed.
+	RestoreHint() string
+}
+
 // CredentialShadowCheck reports stored agent-side state that would make a
 // launch ignore the environment this tool provides — a saved credential
 // that outranks env vars (pi and hermes document exactly that; cline did
