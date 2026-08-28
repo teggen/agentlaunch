@@ -21,7 +21,7 @@ import (
 // save and decodes it back to a raw byte on load, so nothing between the
 // prompt and the exec ever sees anything wrong.
 
-// TestCredentialRejectsControlCharacters pins the chokepoint. All eleven
+// TestCredentialRejectsControlCharacters pins the chokepoint. All thirteen
 // launchers call Credential before doing anything else, so refusing here is
 // what keeps a bad key out of every environment this module builds.
 func TestCredentialRejectsControlCharacters(t *testing.T) {
@@ -82,9 +82,10 @@ func TestNoLauncherPutsAControlCharacterInTheEnvironment(t *testing.T) {
 		&Hermes{Provider: p, Host: host}, &Qwen{Provider: p, Host: host},
 		&Cline{Provider: p, Host: host}, &Kimi{Provider: p, Host: host},
 		&OMP{Provider: p, Host: host}, &OpenClaw{Provider: p, Host: host},
-		&Droid{Provider: p, Host: host},
+		&Droid{Provider: p, Host: host}, &Pool{Provider: p, Host: host},
+		&HermesDesktop{Hermes: Hermes{Provider: p, Host: host}},
 	}
-	if want := len(builtinRegistry(t).List()) - 3; len(launchers) != want {
+	if want := len(builtinRegistry(t).List()) - 2; len(launchers) != want {
 		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
 			len(launchers), want)
 	}

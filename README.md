@@ -3,7 +3,7 @@
 Configure a coding agent for an OpenAI-compatible provider and hand off to it.
 
 This is the reusable half of
-[openrouter-launch](https://github.com/teggen/openrouter-launch): eleven agent
+[openrouter-launch](https://github.com/teggen/openrouter-launch): thirteen agent
 recipes, the process handoff, and a terminal-free planner, parameterized by a
 `Provider` descriptor so one set of recipes serves many tools. It has **no
 dependencies outside the standard library**, and a test refuses to let it grow
@@ -36,7 +36,7 @@ svc := &launch.Service{
 
 | Package | What it holds |
 |---|---|
-| `agent` | `Provider`, `Host`, `Binding`, `Registry`, the eleven launchers, and the exec handoff |
+| `agent` | `Provider`, `Host`, `Binding`, `Registry`, the thirteen launchers, and the exec handoff |
 | `launch` | `Service`, `Plan`, the guard chain and its typed condition errors |
 | `catalog` | the neutral `Model`, the `Catalog` interface, and `Snapshot` |
 

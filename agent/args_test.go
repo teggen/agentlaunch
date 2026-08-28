@@ -146,9 +146,10 @@ func TestEveryLauncherPassesItsOwnHostToTheArgGuards(t *testing.T) {
 		&Hermes{Provider: p, Host: host}, &Qwen{Provider: p, Host: host},
 		&Cline{Provider: p, Host: host}, &Kimi{Provider: p, Host: host},
 		&OMP{Provider: p, Host: host}, &OpenClaw{Provider: p, Host: host},
-		&Droid{Provider: p, Host: host},
+		&Droid{Provider: p, Host: host}, &Pool{Provider: p, Host: host},
+		&HermesDesktop{Hermes: Hermes{Provider: p, Host: host}},
 	}
-	if want := len(builtinRegistry(t).List()) - 3; len(launchers) != want {
+	if want := len(builtinRegistry(t).List()) - 2; len(launchers) != want {
 		t.Fatalf("covering %d launchers, but the registry has %d supported entries",
 			len(launchers), want)
 	}

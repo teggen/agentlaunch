@@ -3,10 +3,10 @@ package agent
 // Builtins returns the agent definitions this package ships, in display
 // order. A tool composes its registry from them —
 // MustRegistry(binding, Builtins()) for all of them, or a filtered slice —
-// which is what lets a second tool reuse eleven launch recipes rather than
+// which is what lets a second tool reuse thirteen launch recipes rather than
 // rewrite them against its own provider.
 //
-// The three desktop apps are definitions like any other; they simply report
+// The two desktop apps are definitions like any other; they simply report
 // that no provider can be injected into them. Their New never inspects the
 // binding, which is the honest statement: the refusal is a fact about the
 // app, not about where it would have been pointed.
@@ -93,6 +93,15 @@ func Builtins() []Definition {
 				return &OpenClaw{Provider: b.Provider, Host: b.Host, LookPath: b.LookPath}, nil
 			},
 		},
+		{
+			Name:        "pool",
+			DisplayName: "Poolside",
+			Aliases:     []string{"poolside"},
+			Description: "Poolside's terminal coding agent",
+			New: func(b Binding) (Launcher, error) {
+				return &Pool{Provider: b.Provider, Host: b.Host, LookPath: b.LookPath}, nil
+			},
+		},
 		// droid's description is kept terse on purpose. It used to carry
 		// "(session-scoped managed config; Factory account required)", which
 		// made it the widest DESCRIPTION cell by a wide margin — and `agents`
@@ -123,13 +132,19 @@ func Builtins() []Definition {
 			Name:        "hermes-desktop",
 			DisplayName: "Hermes Desktop",
 			Description: "Nous Research's desktop app",
-			New:         func(Binding) (Launcher, error) { return nil, errDesktopApp },
+			New: func(b Binding) (Launcher, error) {
+				return &HermesDesktop{Hermes: Hermes{
+					Provider: b.Provider, Host: b.Host, LookPath: b.LookPath,
+				}}, nil
+			},
 		},
 	}
 }
 
-// errDesktopApp is the reason all three desktop apps report. It is one value
-// rather than three identical literals so the three cannot drift apart; the
+// errDesktopApp is the reason both GUI desktop apps report. It is one value
+// rather than two identical literals so the two cannot drift apart; the
 // string is user-facing and is rendered verbatim by `agents --all`.
+// hermes-desktop used to report it too, until it turned out to be the hermes
+// binary plus a subcommand rather than a separate application.
 var errDesktopApp = Unsupported(
 	"desktop app authenticates through its own account; a launcher cannot inject a provider")

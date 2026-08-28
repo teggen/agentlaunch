@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,7 @@ func (f fakeLauncher) Command(Request) (Command, error) {
 
 // builtinRegistry is every builtin bound to the synthetic provider.
 //
-// This module ships recipes, not a bound registry: which provider the eleven
+// This module ships recipes, not a bound registry: which provider the thirteen
 // are pointed at is the consuming tool's decision, so the fixture that
 // exercises them here must be synthetic. A registry built from a real
 // vendor's descriptor would quietly re-couple these tests to that vendor —
@@ -353,7 +354,7 @@ func TestRegistryPhase3Agents(t *testing.T) {
 
 func TestRegistryUnsupportedDesktopApps(t *testing.T) {
 	reg := builtinRegistry(t)
-	for _, name := range []string{"chatgpt", "claude-desktop", "hermes-desktop"} {
+	for _, name := range []string{"chatgpt", "claude-desktop"} {
 		spec, err := reg.Lookup(name)
 		if err != nil {
 			t.Fatalf("Lookup(%q): %v", name, err)
@@ -418,5 +419,36 @@ func TestUnsupportedProviderSurvivesWrapping(t *testing.T) {
 	var upe *UnsupportedProviderError
 	if !errors.As(err, &upe) || upe.Reason != "no such thing" {
 		t.Errorf("errors.As did not recover the reason: %v", err)
+	}
+}
+
+func TestBuiltinsRegistersPoolAndHermesDesktop(t *testing.T) {
+	reg := builtinRegistry(t)
+	for _, name := range []string{"pool", "hermes-desktop"} {
+		spec, err := reg.Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%q) = %v, want the agent registered", name, err)
+		}
+		if !spec.Status.Supported {
+			t.Errorf("%s: Status.Supported = false (%q), want it launchable", name, spec.Status.Reason)
+		}
+	}
+}
+
+// Exactly two desktop apps remain unsupported. This is a count, not a list,
+// so that adding a launchable agent cannot quietly satisfy it.
+func TestOnlyTheTwoGUIDesktopAppsRemainUnsupported(t *testing.T) {
+	reg := builtinRegistry(t)
+	var unsupported []string
+	for _, spec := range reg.List() {
+		if !spec.Status.Supported {
+			unsupported = append(unsupported, spec.Name)
+		}
+	}
+	want := []string{"chatgpt", "claude-desktop"}
+	slices.Sort(unsupported)
+	slices.Sort(want)
+	if !slices.Equal(unsupported, want) {
+		t.Errorf("unsupported = %q, want %q", unsupported, want)
 	}
 }
