@@ -319,8 +319,7 @@ func (d *Droid) Restore() error {
 	}
 
 	// Only a selection naming one of our entries is ours to clear.
-	if model, ok := settings["model"].(string); ok &&
-		strings.HasPrefix(model, "custom:"+d.Host.Marker+"-") {
+	if model, ok := settings["model"].(string); ok && droidOwnsSelection(model, d.Host.Marker) {
 		delete(settings, "model")
 		changed = true
 	}
@@ -330,6 +329,28 @@ func (d *Droid) Restore() error {
 		return nil
 	}
 	return writeDroidSettingsFile(path, settings)
+}
+
+// droidOwnsSelection reports whether model is a `custom:<marker>-N` ID Apply
+// itself could have produced. A bare prefix match on "custom:<marker>-" is
+// not enough: this module binds the same recipes to more than one Host, so a
+// second consumer's marker can legitimately start with ours followed by a
+// hyphen (ours "acme" vs. theirs "acme-pro"), and their live selection
+// "custom:acme-pro-3" would satisfy that prefix. Apply's suffix is always
+// exactly fmt.Sprintf("%d", len(kept)) — plain digits, never signed — so
+// require the remainder after the marker's hyphen to be non-empty and
+// entirely digits; anything else names a selection this Host did not write.
+func droidOwnsSelection(model, marker string) bool {
+	suffix, ok := strings.CutPrefix(model, "custom:"+marker+"-")
+	if !ok || suffix == "" {
+		return false
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // RestoreHint names the file Restore touches.

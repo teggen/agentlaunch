@@ -544,3 +544,89 @@ func TestDroidRestoreIsIdempotentWithNoSettingsFile(t *testing.T) {
 		t.Fatalf("second Restore() = %v, want nil", err)
 	}
 }
+
+// TestDroidRestoreKeepsSelectionFromMarkerSharingOurPrefix pins the fix for
+// a bare prefix match on `model`. This module binds the same recipes to
+// more than one Host, so a second consumer's marker can legitimately start
+// with ours followed by a hyphen — our "acme-launch" is a literal prefix of
+// their "acme-launch-pro". Before the fix, `strings.HasPrefix(model,
+// "custom:"+marker+"-")` matched their live selection
+// "custom:acme-launch-pro-3" and cleared it; the fix requires the remainder
+// after the hyphen to be entirely digits, which "pro-3" is not.
+func TestDroidRestoreKeepsSelectionFromMarkerSharingOurPrefix(t *testing.T) {
+	home := testHome(t)
+	path := filepath.Join(home, ".factory", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	settings := map[string]any{
+		"customModels": []any{
+			map[string]any{"displayName": "acme-launch-pro", "baseUrl": "https://other.test"},
+		},
+		"model": "custom:acme-launch-pro-3",
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{Provider: testProvider(), Host: testHost()}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("Restore() = %v, want nil", err)
+	}
+
+	got, _, err := readDroidSettingsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["model"] != "custom:acme-launch-pro-3" {
+		t.Errorf("model = %v, want the other consumer's selection left alone", got["model"])
+	}
+}
+
+// TestDroidRestoreLeavesAForeignOnlyFileUntouched pins the doc comment's
+// claim "Never rewrite a file we had no reason to touch": a settings file
+// holding no marker-owned customModels entry and no selection pointing at
+// one must come back byte-identical, not merely logically equivalent (a
+// re-marshal could reorder keys or change indentation even with no field
+// added, removed, or changed). Byte-identical is checked because ModTime
+// resolution can be too coarse on some filesystems to catch a same-tick
+// rewrite; ModTime is recorded and checked too, as a second signal.
+func TestDroidRestoreLeavesAForeignOnlyFileUntouched(t *testing.T) {
+	home := testHome(t)
+	path := filepath.Join(home, ".factory", "settings.local.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte(`{"customModels":[{"baseUrl":"https://example.test","displayName":"someone-else"}],"model":"custom:someone-else-0"}`)
+	if err := os.WriteFile(path, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d := &Droid{Provider: testProvider(), Host: testHost()}
+	if err := d.Restore(); err != nil {
+		t.Fatalf("Restore() = %v, want nil", err)
+	}
+
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Errorf("ModTime changed from %v to %v: file was rewritten though nothing needed changing", before.ModTime(), after.ModTime())
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != string(original) {
+		t.Errorf("file contents changed:\n got  %s\nwant %s (byte-identical)", raw, original)
+	}
+}
