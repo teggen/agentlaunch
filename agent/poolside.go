@@ -83,9 +83,6 @@ func (p *Pool) Command(req Request) (Command, error) {
 	if err := rejectModelFlag(p.Host, "pool", req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags(p.Host, "pool", req.ExtraArgs, "-m"); err != nil {
-		return Command{}, err
-	}
 	path, err := p.findPath()
 	if err != nil {
 		return Command{}, err
