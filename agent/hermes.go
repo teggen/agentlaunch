@@ -76,6 +76,27 @@ func (h *Hermes) findPath() (string, error) {
 	return "", fmt.Errorf("hermes binary not found")
 }
 
+// rejectBareSubcommand refuses a passthrough whose first element does not
+// start with "-": that shape is a hermes subcommand name, and this launcher
+// already supplies one (chat, or desktop for HermesDesktop) — accepting it
+// would silently misconfigure the run rather than refuse it.
+//
+// agentName and subcommand are parameters, not something the callee works
+// out for itself, because Go embedding gives no virtual dispatch: were this
+// guard to call back out to a method on h, HermesDesktop embedding Hermes
+// would still reach Hermes's own method, never an override — embedding is
+// composition, not inheritance-with-dispatch. So HermesDesktop.Command calls
+// this directly, before delegating to Hermes.Command, telling it which
+// launcher and subcommand are actually in play rather than letting the
+// embedded Hermes guess wrong.
+func rejectBareSubcommand(host Host, agentName, subcommand string, extraArgs []string) error {
+	if len(extraArgs) > 0 && !strings.HasPrefix(extraArgs[0], "-") {
+		return fmt.Errorf("%s: passthrough %q looks like a hermes subcommand: %s always runs \"hermes %s\"; pass %s flags only",
+			agentName, extraArgs[0], host.Name, subcommand, subcommand)
+	}
+	return nil
+}
+
 // Command builds the hermes invocation. Pure: nothing written, nothing
 // spawned. Managed flags ride the chat subcommand, so a passthrough that
 // starts with a different subcommand is refused rather than silently
@@ -91,8 +112,8 @@ func (h *Hermes) Command(req Request) (Command, error) {
 	if err := rejectFlags(h.Host, "hermes", req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
-	if len(req.ExtraArgs) > 0 && !strings.HasPrefix(req.ExtraArgs[0], "-") {
-		return Command{}, fmt.Errorf("hermes: passthrough %q looks like a hermes subcommand: %s always runs \"hermes chat\"; pass chat flags only", req.ExtraArgs[0], h.Host.Name)
+	if err := rejectBareSubcommand(h.Host, "hermes", "chat", req.ExtraArgs); err != nil {
+		return Command{}, err
 	}
 	path, err := h.findPath()
 	if err != nil {
@@ -204,7 +225,15 @@ func (h *HermesDesktop) DisplayName() string { return "Hermes Desktop" }
 // Command builds the desktop invocation by rewriting the terminal one: the
 // embedded Hermes owns every guard and the environment, and this replaces
 // only the subcommand its args are built around.
+//
+// The bare-subcommand guard runs here FIRST, named for this launcher, before
+// delegating to Hermes.Command — which runs its own copy of the same guard,
+// worded for "hermes chat". Checking here first is what makes the
+// desktop-worded error the one the user actually sees.
 func (h *HermesDesktop) Command(req Request) (Command, error) {
+	if err := rejectBareSubcommand(h.Host, "hermes-desktop", "desktop", req.ExtraArgs); err != nil {
+		return Command{}, err
+	}
 	cmd, err := h.Hermes.Command(req)
 	if err != nil {
 		return Command{}, err

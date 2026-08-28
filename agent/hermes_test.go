@@ -218,3 +218,42 @@ func TestHermesDesktopInheritsTheContextFloor(t *testing.T) {
 		t.Errorf("CheckModel() = %v, want it to wrap ErrIncompatibleModel", err)
 	}
 }
+
+// The bare-subcommand guard is inherited from Hermes.Command via delegation,
+// but its wording must name the launcher that actually runs — a user hitting
+// this through hermes-desktop and being told "always runs hermes chat" would
+// be misdirected. This pins the desktop-worded message.
+func TestHermesDesktopBareSubcommandErrorNamesDesktopNotChat(t *testing.T) {
+	h := &HermesDesktop{Hermes: Hermes{
+		Provider: testProvider(),
+		Host:     testHost(),
+		LookPath: func(string) (string, error) { return "/usr/bin/hermes", nil },
+	}}
+	_, err := h.Command(Request{
+		Model:     catalog.Model{ID: "acme/model-1"},
+		APIKey:    "sk-test",
+		ExtraArgs: []string{"foo"},
+	})
+	if err == nil {
+		t.Fatal("Command() = nil, want an error for a bare-subcommand passthrough")
+	}
+	want := `hermes-desktop: passthrough "foo" looks like a hermes subcommand: acme-launch always runs "hermes desktop"; pass desktop flags only`
+	if err.Error() != want {
+		t.Errorf("err =\n  %q\nwant\n  %q", err.Error(), want)
+	}
+}
+
+// Regression bar for the guard's extraction into a parameterized helper:
+// Hermes's own message must come out byte-identical to what it was before
+// the refactor.
+func TestHermesBareSubcommandErrorWordingUnchanged(t *testing.T) {
+	h := &Hermes{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/hermes")}
+	_, err := h.Command(Request{Model: testModel(), APIKey: "k", ExtraArgs: []string{"gateway"}})
+	if err == nil {
+		t.Fatal("Command() = nil, want an error for a bare-subcommand passthrough")
+	}
+	want := `hermes: passthrough "gateway" looks like a hermes subcommand: acme-launch always runs "hermes chat"; pass chat flags only`
+	if err.Error() != want {
+		t.Errorf("err =\n  %q\nwant\n  %q", err.Error(), want)
+	}
+}
