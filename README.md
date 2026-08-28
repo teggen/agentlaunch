@@ -44,8 +44,8 @@ svc := &launch.Service{
 and **must be pure** — no writes, no network, no spawning. Purity is what lets
 every agent be tested by comparing a struct. Everything else is an opt-in
 capability interface detected by type assertion: `Installable`, `Installer`,
-`Compatible`, `PlatformSupported`, `ConfigWriter`, `CredentialShadowCheck` and
-`Staged`.
+`Compatible`, `PlatformSupported`, `ConfigWriter`, `Restorable`,
+`CredentialShadowCheck` and `Staged`.
 
 The registry is a **value**, not package state. `Builtins()` returns
 provider-independent `Definition`s; `NewRegistry(Binding, []Definition)`

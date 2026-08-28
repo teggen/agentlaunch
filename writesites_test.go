@@ -40,7 +40,10 @@ var writeSitePattern = regexp.MustCompile(
 // slipping in unnoticed is exactly what this invariant exists to prevent.
 var writeSiteAllowlist = map[string]bool{
 	"launch/handoff.go": true, // site 3: the Staged materializer
-	"agent/droid.go":    true, // site 4: droid's ConfigWriter
+	// Site 4: droid's config, written from TWO entry points —
+	// ConfigWriter.Apply's restore closure (exit-scoped) and
+	// Restorable.Restore (out of band, via `restore droid`).
+	"agent/droid.go": true,
 	// Site 5: cline's ConfigWriter. Note the inversion relative to site 4 —
 	// this one only ever RESTORES. Cline itself does the writing (-k is
 	// persisted into its provider store), and the write primitive here exists

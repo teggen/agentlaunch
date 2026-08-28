@@ -243,6 +243,31 @@ func TestHermesDesktopBareSubcommandErrorNamesDesktopNotChat(t *testing.T) {
 	}
 }
 
+// HermesDesktop.Command's doc comment insists it sets agentName/subcommand on
+// a COPY of the embedded Hermes, never on h.Hermes itself — because h.Hermes
+// is a launcher value reused across calls, and mutating it would race and
+// leak the "desktop" identity into a later plain-Hermes call. That claim was
+// asserted only in prose; this pins it as behavior. Calling Command must
+// leave the embedded value's own resolved agent name at the zero-value
+// default ("hermes"), not the desktop-worded override Command used to build
+// its own argv and error messages.
+func TestHermesDesktopCommandDoesNotMutateTheEmbeddedHermes(t *testing.T) {
+	h := &HermesDesktop{Hermes: Hermes{
+		Provider: testProvider(),
+		Host:     testHost(),
+		LookPath: func(string) (string, error) { return "/usr/bin/hermes", nil },
+	}}
+	if _, err := h.Command(Request{
+		Model:  catalog.Model{ID: "acme/model-1"},
+		APIKey: "sk-test",
+	}); err != nil {
+		t.Fatalf("Command() = %v, want nil", err)
+	}
+	if got := h.Hermes.agentNameOrDefault(); got != "hermes" {
+		t.Errorf("after Command(), h.Hermes.agentNameOrDefault() = %q, want %q (the receiver was mutated instead of copied)", got, "hermes")
+	}
+}
+
 // Regression bar for the guard's extraction into a parameterized helper:
 // Hermes's own message must come out byte-identical to what it was before
 // the refactor.
