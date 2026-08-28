@@ -44,7 +44,7 @@ type Spec struct {
 }
 
 // Registry is a set of agents bound to one provider. It is a value rather
-// than package state so that a second tool — same eleven recipes, different
+// than package state so that a second tool — same thirteen recipes, different
 // provider — builds its own instead of mutating a global.
 type Registry struct {
 	specs []*Spec

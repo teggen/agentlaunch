@@ -7,7 +7,7 @@ import (
 )
 
 // Provider is the endpoint a launcher points an agent at. Every launcher in
-// this package is parameterized by one, so that the same eleven recipes serve
+// this package is parameterized by one, so that the same thirteen recipes serve
 // OpenRouter, a locally served model, a direct vendor API, or a self-hosted
 // gateway without being rewritten.
 //
