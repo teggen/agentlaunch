@@ -39,6 +39,32 @@ type Hermes struct {
 	Host Host
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
+
+	// agentName and subcommand override the launcher identity used in the
+	// bare-subcommand passthrough guard's error message (see Command).
+	// Unexported: only HermesDesktop, in this package, ever needs to set
+	// them, on a per-call COPY (never on a shared *Hermes — Command has a
+	// pointer receiver and a launcher value is reused across calls, so
+	// mutating the original would race and leak state between launches).
+	// The zero value must mean "hermes"/"chat" so every existing
+	// &Hermes{...} construction, including builtins.go's, is unchanged;
+	// see agentNameOrDefault/subcommandOrDefault.
+	agentName  string
+	subcommand string
+}
+
+func (h *Hermes) agentNameOrDefault() string {
+	if h.agentName != "" {
+		return h.agentName
+	}
+	return "hermes"
+}
+
+func (h *Hermes) subcommandOrDefault() string {
+	if h.subcommand != "" {
+		return h.subcommand
+	}
+	return "chat"
 }
 
 func (h *Hermes) Name() string        { return "hermes" }
@@ -81,14 +107,16 @@ func (h *Hermes) findPath() (string, error) {
 // already supplies one (chat, or desktop for HermesDesktop) — accepting it
 // would silently misconfigure the run rather than refuse it.
 //
-// agentName and subcommand are parameters, not something the callee works
-// out for itself, because Go embedding gives no virtual dispatch: were this
-// guard to call back out to a method on h, HermesDesktop embedding Hermes
-// would still reach Hermes's own method, never an override — embedding is
-// composition, not inheritance-with-dispatch. So HermesDesktop.Command calls
-// this directly, before delegating to Hermes.Command, telling it which
-// launcher and subcommand are actually in play rather than letting the
-// embedded Hermes guess wrong.
+// agentName and subcommand are parameters rather than something read off a
+// receiver, because Go embedding gives no virtual dispatch: HermesDesktop
+// embedding Hermes never lets a call from inside Hermes.Command reach a
+// HermesDesktop override. Command calls this exactly once, at its fixed
+// position in the guard sequence, with h.agentNameOrDefault()/
+// h.subcommandOrDefault() — HermesDesktop supplies the desktop-worded
+// values by setting those fields on a COPY of the embedded Hermes before
+// delegating (see HermesDesktop.Command), not by calling this guard a
+// second time itself. That is what keeps the two launchers agreeing on
+// which guard fires first for a request that trips more than one.
 func rejectBareSubcommand(host Host, agentName, subcommand string, extraArgs []string) error {
 	if len(extraArgs) > 0 && !strings.HasPrefix(extraArgs[0], "-") {
 		return fmt.Errorf("%s: passthrough %q looks like a hermes subcommand: %s always runs \"hermes %s\"; pass %s flags only",
@@ -112,7 +140,7 @@ func (h *Hermes) Command(req Request) (Command, error) {
 	if err := rejectFlags(h.Host, "hermes", req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
-	if err := rejectBareSubcommand(h.Host, "hermes", "chat", req.ExtraArgs); err != nil {
+	if err := rejectBareSubcommand(h.Host, h.agentNameOrDefault(), h.subcommandOrDefault(), req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
 	path, err := h.findPath()
@@ -223,18 +251,22 @@ func (h *HermesDesktop) Name() string        { return "hermes-desktop" }
 func (h *HermesDesktop) DisplayName() string { return "Hermes Desktop" }
 
 // Command builds the desktop invocation by rewriting the terminal one: the
-// embedded Hermes owns every guard and the environment, and this replaces
-// only the subcommand its args are built around.
+// embedded Hermes owns every guard, in its one fixed order, and the
+// environment; this replaces only the subcommand its args are built around.
 //
-// The bare-subcommand guard runs here FIRST, named for this launcher, before
-// delegating to Hermes.Command — which runs its own copy of the same guard,
-// worded for "hermes chat". Checking here first is what makes the
-// desktop-worded error the one the user actually sees.
+// The bare-subcommand guard's error message is renamed for this launcher by
+// setting agentName/subcommand on a COPY of the embedded Hermes — never on
+// h.Hermes itself, which is shared across calls — and delegating to that
+// copy's Command. Hermes.Command's guard sequence, and its position in it,
+// stay exactly as Hermes runs them: a request that also trips an earlier
+// guard (an unusable API key, a conflicting --model) reports that guard's
+// error here exactly as it would through plain Hermes, rather than this
+// launcher's argv rewrite pre-empting it with the wrong failure.
 func (h *HermesDesktop) Command(req Request) (Command, error) {
-	if err := rejectBareSubcommand(h.Host, "hermes-desktop", "desktop", req.ExtraArgs); err != nil {
-		return Command{}, err
-	}
-	cmd, err := h.Hermes.Command(req)
+	hermes := h.Hermes
+	hermes.agentName = "hermes-desktop"
+	hermes.subcommand = "desktop"
+	cmd, err := hermes.Command(req)
 	if err != nil {
 		return Command{}, err
 	}

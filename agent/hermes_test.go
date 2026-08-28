@@ -257,3 +257,48 @@ func TestHermesBareSubcommandErrorWordingUnchanged(t *testing.T) {
 		t.Errorf("err =\n  %q\nwant\n  %q", err.Error(), want)
 	}
 }
+
+// A bare-subcommand-shaped passthrough loses to an earlier guard exactly the
+// way it does in Hermes: threading the launcher's naming through as data
+// (rather than checking the bare-subcommand guard early, before delegating)
+// keeps HermesDesktop and Hermes agreeing on precedence — the whole point
+// of this restructure.
+func TestHermesDesktopGuardPrecedenceMatchesHermes(t *testing.T) {
+	// "gateway" looks like a bare subcommand (first element, no leading
+	// "-"), but "--model" elsewhere in the same passthrough must trip the
+	// earlier rejectModelFlag guard first: it scans the whole slice, while
+	// the bare-subcommand guard only looks at args[0].
+	extras := []string{"gateway", "--model", "x/y"}
+
+	desktop := &HermesDesktop{Hermes: Hermes{
+		Provider: testProvider(),
+		Host:     testHost(),
+		LookPath: func(string) (string, error) { return "/usr/bin/hermes", nil },
+	}}
+	_, desktopErr := desktop.Command(Request{
+		Model:     catalog.Model{ID: "acme/model-1"},
+		APIKey:    "sk-test",
+		ExtraArgs: extras,
+	})
+	if desktopErr == nil {
+		t.Fatal("HermesDesktop.Command() = nil, want the earlier --model guard's error")
+	}
+	if !strings.Contains(desktopErr.Error(), "conflicting argument") {
+		t.Errorf("HermesDesktop error = %q, want the --model guard's error", desktopErr.Error())
+	}
+	if strings.Contains(desktopErr.Error(), "looks like a hermes subcommand") {
+		t.Errorf("HermesDesktop error = %q, want the earlier guard to win, not the bare-subcommand guard", desktopErr.Error())
+	}
+
+	plain := &Hermes{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/hermes")}
+	_, plainErr := plain.Command(Request{Model: testModel(), APIKey: "sk-test", ExtraArgs: extras})
+	if plainErr == nil {
+		t.Fatal("Hermes.Command() = nil, want the earlier --model guard's error")
+	}
+	if !strings.Contains(plainErr.Error(), "conflicting argument") {
+		t.Errorf("Hermes error = %q, want the --model guard's error", plainErr.Error())
+	}
+	if strings.Contains(plainErr.Error(), "looks like a hermes subcommand") {
+		t.Errorf("Hermes error = %q, want the earlier guard to win, not the bare-subcommand guard", plainErr.Error())
+	}
+}
