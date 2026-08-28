@@ -40,15 +40,17 @@ type Hermes struct {
 	// LookPath is injectable for tests; nil means exec.LookPath.
 	LookPath func(string) (string, error)
 
-	// agentName and subcommand override the launcher identity used in the
-	// bare-subcommand passthrough guard's error message (see Command).
-	// Unexported: only HermesDesktop, in this package, ever needs to set
-	// them, on a per-call COPY (never on a shared *Hermes — Command has a
-	// pointer receiver and a launcher value is reused across calls, so
-	// mutating the original would race and leak state between launches).
-	// The zero value must mean "hermes"/"chat" so every existing
-	// &Hermes{...} construction, including builtins.go's, is unchanged;
-	// see agentNameOrDefault/subcommandOrDefault.
+	// agentName and subcommand override the launcher identity used in every
+	// agent-named error Command can return — the credential check, the
+	// --model and --provider passthrough guards, and the bare-subcommand
+	// guard — so a failure through HermesDesktop is never reported as
+	// coming from plain "hermes". Unexported: only HermesDesktop, in this
+	// package, ever needs to set them, on a per-call COPY (never on a
+	// shared *Hermes — Command has a pointer receiver and a launcher value
+	// is reused across calls, so mutating the original would race and leak
+	// state between launches). The zero value must mean "hermes"/"chat" so
+	// every existing &Hermes{...} construction, including builtins.go's, is
+	// unchanged; see agentNameOrDefault/subcommandOrDefault.
 	agentName  string
 	subcommand string
 }
@@ -130,14 +132,14 @@ func rejectBareSubcommand(host Host, agentName, subcommand string, extraArgs []s
 // starts with a different subcommand is refused rather than silently
 // misconfigured.
 func (h *Hermes) Command(req Request) (Command, error) {
-	key, err := h.Provider.Credential("hermes", req.APIKey)
+	key, err := h.Provider.Credential(h.agentNameOrDefault(), req.APIKey)
 	if err != nil {
 		return Command{}, err
 	}
-	if err := rejectModelFlag(h.Host, "hermes", req.ExtraArgs); err != nil {
+	if err := rejectModelFlag(h.Host, h.agentNameOrDefault(), req.ExtraArgs); err != nil {
 		return Command{}, err
 	}
-	if err := rejectFlags(h.Host, "hermes", req.ExtraArgs, "--provider"); err != nil {
+	if err := rejectFlags(h.Host, h.agentNameOrDefault(), req.ExtraArgs, "--provider"); err != nil {
 		return Command{}, err
 	}
 	if err := rejectBareSubcommand(h.Host, h.agentNameOrDefault(), h.subcommandOrDefault(), req.ExtraArgs); err != nil {

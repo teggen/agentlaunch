@@ -289,6 +289,13 @@ func TestHermesDesktopGuardPrecedenceMatchesHermes(t *testing.T) {
 	if strings.Contains(desktopErr.Error(), "looks like a hermes subcommand") {
 		t.Errorf("HermesDesktop error = %q, want the earlier guard to win, not the bare-subcommand guard", desktopErr.Error())
 	}
+	// The precedence agreement alone isn't enough: rejectModelFlag's message
+	// is also agent-named, and it must say which launcher failed rather than
+	// merely that a --model guard fired somewhere. "contains conflicting
+	// argument" alone would pass even if this still said "hermes: ...".
+	if !strings.HasPrefix(desktopErr.Error(), "hermes-desktop: ") {
+		t.Errorf("HermesDesktop error = %q, want it prefixed %q", desktopErr.Error(), "hermes-desktop: ")
+	}
 
 	plain := &Hermes{Provider: testProvider(), Host: testHost(), LookPath: stubLookPath("/usr/local/bin/hermes")}
 	_, plainErr := plain.Command(Request{Model: testModel(), APIKey: "sk-test", ExtraArgs: extras})
@@ -300,5 +307,8 @@ func TestHermesDesktopGuardPrecedenceMatchesHermes(t *testing.T) {
 	}
 	if strings.Contains(plainErr.Error(), "looks like a hermes subcommand") {
 		t.Errorf("Hermes error = %q, want the earlier guard to win, not the bare-subcommand guard", plainErr.Error())
+	}
+	if !strings.HasPrefix(plainErr.Error(), "hermes: ") {
+		t.Errorf("Hermes error = %q, want it prefixed %q", plainErr.Error(), "hermes: ")
 	}
 }
