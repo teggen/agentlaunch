@@ -179,3 +179,37 @@ func hermesAuthHasProvider(path, providerID string) bool {
 	_, ok := store[providerID]
 	return ok
 }
+
+// HermesDesktop launches hermes's Electron desktop app against the same
+// provider and model the terminal launcher uses.
+//
+// It is NOT a separate application with its own account — it is the hermes
+// binary plus a subcommand, which is why it can be pointed at a provider at
+// all where the other desktop apps could not. Everything except the argv
+// shape is inherited: the context floor, the credential-shadow check, the
+// binary search and the install hint are hermes's, and duplicating them here
+// would let them drift.
+//
+// The provider flags are TOP-LEVEL and must precede the subcommand.
+// Live-verified on v0.20.5 (2026-08-28): `hermes --provider X --model Y
+// desktop --help` exits 0, and `hermes desktop` itself declares no provider
+// or model option, so the flags after the subcommand would be a parse error.
+type HermesDesktop struct {
+	Hermes
+}
+
+func (h *HermesDesktop) Name() string        { return "hermes-desktop" }
+func (h *HermesDesktop) DisplayName() string { return "Hermes Desktop" }
+
+// Command builds the desktop invocation by rewriting the terminal one: the
+// embedded Hermes owns every guard and the environment, and this replaces
+// only the subcommand its args are built around.
+func (h *HermesDesktop) Command(req Request) (Command, error) {
+	cmd, err := h.Hermes.Command(req)
+	if err != nil {
+		return Command{}, err
+	}
+	args := []string{"--provider", h.Provider.ID, "--model", req.Model.ID, "desktop"}
+	cmd.Args = append(args, req.ExtraArgs...)
+	return cmd, nil
+}

@@ -156,3 +156,65 @@ func TestHermesShadowedCredential(t *testing.T) {
 		t.Errorf("auth pool: msg = %q, want it to name auth.json", msg)
 	}
 }
+
+func TestHermesDesktopPutsProviderFlagsBeforeTheSubcommand(t *testing.T) {
+	h := &HermesDesktop{Hermes: Hermes{
+		Provider: testProvider(),
+		Host:     testHost(),
+		LookPath: func(string) (string, error) { return "/usr/bin/hermes", nil },
+	}}
+	cmd, err := h.Command(Request{
+		Model:  catalog.Model{ID: "acme/model-1", ContextLength: 128000},
+		APIKey: "sk-test",
+	})
+	if err != nil {
+		t.Fatalf("Command() = %v, want nil", err)
+	}
+	// Verified on hermes v0.20.5: --provider/--model are top-level options,
+	// and `hermes desktop` declares neither. Putting them after the
+	// subcommand is an argparse error, not a stylistic choice.
+	want := []string{"--provider", "acme", "--model", "acme/model-1", "desktop"}
+	if !slices.Equal(cmd.Args, want) {
+		t.Errorf("Args =\n  %q\nwant\n  %q", cmd.Args, want)
+	}
+}
+
+func TestHermesDesktopAppendsPassthroughAfterTheSubcommand(t *testing.T) {
+	h := &HermesDesktop{Hermes: Hermes{
+		Provider: testProvider(),
+		Host:     testHost(),
+		LookPath: func(string) (string, error) { return "/usr/bin/hermes", nil },
+	}}
+	cmd, err := h.Command(Request{
+		Model:     catalog.Model{ID: "acme/model-1"},
+		APIKey:    "sk-test",
+		ExtraArgs: []string{"--skip-build"},
+	})
+	if err != nil {
+		t.Fatalf("Command() = %v, want nil", err)
+	}
+	want := []string{"--provider", "acme", "--model", "acme/model-1", "desktop", "--skip-build"}
+	if !slices.Equal(cmd.Args, want) {
+		t.Errorf("Args =\n  %q\nwant\n  %q", cmd.Args, want)
+	}
+}
+
+func TestHermesDesktopIdentifiesItselfSeparately(t *testing.T) {
+	h := &HermesDesktop{}
+	if h.Name() != "hermes-desktop" {
+		t.Errorf("Name() = %q, want hermes-desktop", h.Name())
+	}
+	if h.DisplayName() != "Hermes Desktop" {
+		t.Errorf("DisplayName() = %q, want Hermes Desktop", h.DisplayName())
+	}
+}
+
+// The context floor is hermes's, not the CLI's, so the desktop app inherits
+// it. This pins the inheritance rather than the floor.
+func TestHermesDesktopInheritsTheContextFloor(t *testing.T) {
+	h := &HermesDesktop{Hermes: Hermes{Provider: testProvider()}}
+	err := h.CheckModel(catalog.Model{ID: "acme/tiny", ContextLength: 8000})
+	if !errors.Is(err, ErrIncompatibleModel) {
+		t.Errorf("CheckModel() = %v, want it to wrap ErrIncompatibleModel", err)
+	}
+}
